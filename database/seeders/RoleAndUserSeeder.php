@@ -19,7 +19,7 @@ class RoleAndUserSeeder extends Seeder
         }
 
         $superAdmin = User::query()->firstOrCreate(
-            ['email' => 'c@gmail.com'],
+            ['email' => 'super@gmail.com'],
             [
                 'name' => 'Super Admin',
                 'password' => Hash::make('admin@123'),

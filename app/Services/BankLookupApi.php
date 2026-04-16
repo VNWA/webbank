@@ -6,14 +6,33 @@ use Illuminate\Support\Facades\Http;
 
 class BankLookupApi
 {
+    private string $baseUrl;
+
+    private string $apiKey;
+
+    private string $secretKey;
+
+    private int $timeout;
+
+    public function __construct()
+    {
+        $cfg = (array) config('banklookup');
+        $this->baseUrl = rtrim((string) ($cfg['base_url'] ?? 'https://api.banklookup.net'), '/');
+        $this->apiKey = (string) ($cfg['api_key'] ?? '');
+        $this->secretKey = (string) ($cfg['secret_key'] ?? '');
+        $this->timeout = (int) ($cfg['timeout'] ?? 20);
+    }
+
     /**
      * @return array{ok: bool, message: string, banks: list<array{code: string, short_name: string, name: string, bin: string, lookup_supported: bool}>}
      */
     public function listBanks(): array
     {
-        $response = Http::timeout(15)
+        $path = (string) (config('banklookup.bank_list_path') ?? '/bank/list');
+
+        $response = Http::timeout($this->timeout)
             ->acceptJson()
-            ->get('https://api.banklookup.net/bank/list');
+            ->get($this->baseUrl.$path);
 
         if (! $response->successful()) {
             return [
@@ -61,27 +80,25 @@ class BankLookupApi
      */
     public function lookupAccountName(string $bankCode, string $accountNumber): array
     {
-        $apiKey = (string) env('BANK_LOOKUP_API_KEY', '');
-        $secretKey = (string) env('BANK_LOOKUP_API_SECRET_KEY', '');
-        $url = (string) env('BANK_LOOKUP_ACCOUNT_URL', 'https://api.banklookup.net');
-
-        if ($apiKey === '' || $secretKey === '') {
+        if ($this->apiKey === '' || $this->secretKey === '') {
             return [
                 'ok' => false,
-                'message' => 'Thiếu BANK_LOOKUP_API_KEY / BANK_LOOKUP_API_SECRET_KEY.',
+                'message' => 'Thiếu BANK_LOOKUP_API_KEY / BANK_LOOKUP_API_SECRET_KEY trong config.',
                 'recipient_name' => '',
             ];
         }
 
-        $response = Http::timeout(20)
+        $path = (string) (config('banklookup.account_path') ?? '/api/account-name');
+
+        $response = Http::timeout($this->timeout)
             ->acceptJson()
             ->withHeaders([
-                'x-api-key' => $apiKey,
-                'x-api-secret' => $secretKey,
+                'x-api-key' => $this->apiKey,
+                'x-api-secret' => $this->secretKey,
                 'Content-Type' => 'application/json',
             ])
             ->asJson()
-            ->post($url, [
+            ->post($this->baseUrl.$path, [
                 'bank' => $bankCode,
                 'account' => $accountNumber,
             ]);
@@ -127,4 +144,3 @@ class BankLookupApi
         return '';
     }
 }
-
