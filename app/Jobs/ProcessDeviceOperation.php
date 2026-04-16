@@ -429,19 +429,16 @@ class ProcessDeviceOperation implements ShouldQueue
         $this->tap($duoPlusApi, $device, $operation, 'blur_amount', $tap['blur_amount']);
         $this->pauseLocal((float) ($timing['wait_after_blur'] ?? 0.5));
 
-        // botBank Bắc Á: tap ô nội dung → tap nút xóa (936,1016) → input text.
+        // Note: tap focus → keyevent 277 (select all) → tap clear_note → input text
+        $safeNote = $this->normalizeTransferNote($note !== '' ? $note : 'ck');
         $this->tap($duoPlusApi, $device, $operation, 'focus_note', $tap['note']);
         $this->pauseLocal(0.25);
+        $this->sendAdb($duoPlusApi, $device, $operation, 'select_note', 'input keyevent 277');
         if (isset($tap['clear_note']) && is_array($tap['clear_note'])) {
             $this->tap($duoPlusApi, $device, $operation, 'tap_clear_note', $tap['clear_note']);
+            $this->pauseLocal(0.15);
         }
-        $this->sendAdb(
-            $duoPlusApi,
-            $device,
-            $operation,
-            'input_note',
-            $this->inputTextCommand($note !== '' ? $note : 'ck'),
-        );
+        $this->sendAdb($duoPlusApi, $device, $operation, 'input_note', $this->inputTextCommand($safeNote));
         $this->pauseLocal(0.5);
         $this->tap($duoPlusApi, $device, $operation, 'blur_note', $tap['blur_note']);
         $this->pauseLocal((float) ($timing['wait_after_blur'] ?? 0.5));
@@ -633,20 +630,16 @@ class ProcessDeviceOperation implements ShouldQueue
         $this->tap($duoPlusApi, $device, $operation, 'dismiss_popup', $tap['dismiss_popup']);
         $this->pauseLocal(0.5);
 
-        // Note — botBank PG: tap clear_note → tap focus_note → input text
+        // Note — tap clear_note → focus_note → keyevent 277 → input text
+        $safeNote = $this->normalizeTransferNote($note !== '' ? $note : 'ck');
         if (isset($tap['clear_note']) && is_array($tap['clear_note'])) {
             $this->tap($duoPlusApi, $device, $operation, 'tap_clear_note', $tap['clear_note']);
             $this->pauseLocal(0.2);
         }
         $this->tap($duoPlusApi, $device, $operation, 'focus_note', $tap['note']);
         $this->pauseLocal(0.25);
-        $this->sendAdb(
-            $duoPlusApi,
-            $device,
-            $operation,
-            'input_note',
-            $this->inputTextCommand($note !== '' ? $note : 'ck'),
-        );
+        $this->sendAdb($duoPlusApi, $device, $operation, 'select_note', 'input keyevent 277');
+        $this->sendAdb($duoPlusApi, $device, $operation, 'input_note', $this->inputTextCommand($safeNote));
         $this->pauseLocal(0.15);
         $this->tap($duoPlusApi, $device, $operation, 'blur', $tap['blur']);
         $this->pauseLocal(0.15);
@@ -1362,6 +1355,38 @@ class ProcessDeviceOperation implements ShouldQueue
         $escaped = preg_replace('/([\\\\\"\'`$;&|<>])/', '\\\\$1', $normalized) ?? '';
 
         return 'input text '.$escaped;
+    }
+
+    /**
+     * Chuẩn hóa nội dung chuyển khoản: in hoa, bỏ dấu, chỉ giữ [A-Z0-9 ] an toàn cho ADB input text.
+     */
+    private function normalizeTransferNote(string $raw): string
+    {
+        $upper = mb_strtoupper(trim($raw));
+
+        $map = [
+            'À' => 'A', 'Á' => 'A', 'Ả' => 'A', 'Ã' => 'A', 'Ạ' => 'A',
+            'Ă' => 'A', 'Ắ' => 'A', 'Ằ' => 'A', 'Ẳ' => 'A', 'Ẵ' => 'A', 'Ặ' => 'A',
+            'Â' => 'A', 'Ấ' => 'A', 'Ầ' => 'A', 'Ẩ' => 'A', 'Ẫ' => 'A', 'Ậ' => 'A',
+            'Đ' => 'D',
+            'È' => 'E', 'É' => 'E', 'Ẻ' => 'E', 'Ẽ' => 'E', 'Ẹ' => 'E',
+            'Ê' => 'E', 'Ế' => 'E', 'Ề' => 'E', 'Ể' => 'E', 'Ễ' => 'E', 'Ệ' => 'E',
+            'Ì' => 'I', 'Í' => 'I', 'Ỉ' => 'I', 'Ĩ' => 'I', 'Ị' => 'I',
+            'Ò' => 'O', 'Ó' => 'O', 'Ỏ' => 'O', 'Õ' => 'O', 'Ọ' => 'O',
+            'Ô' => 'O', 'Ố' => 'O', 'Ồ' => 'O', 'Ổ' => 'O', 'Ỗ' => 'O', 'Ộ' => 'O',
+            'Ơ' => 'O', 'Ớ' => 'O', 'Ờ' => 'O', 'Ở' => 'O', 'Ỡ' => 'O', 'Ợ' => 'O',
+            'Ù' => 'U', 'Ú' => 'U', 'Ủ' => 'U', 'Ũ' => 'U', 'Ụ' => 'U',
+            'Ư' => 'U', 'Ứ' => 'U', 'Ừ' => 'U', 'Ử' => 'U', 'Ữ' => 'U', 'Ự' => 'U',
+            'Ỳ' => 'Y', 'Ý' => 'Y', 'Ỷ' => 'Y', 'Ỹ' => 'Y', 'Ỵ' => 'Y',
+        ];
+
+        $stripped = strtr($upper, $map);
+
+        // Chỉ giữ A-Z, 0-9, space — loại bỏ ký tự đặc biệt gây lỗi ADB
+        $clean = preg_replace('/[^A-Z0-9 ]/', '', $stripped) ?? $stripped;
+
+        // Gộp nhiều space thành 1, trim
+        return trim(preg_replace('/\s+/', ' ', $clean) ?? $clean);
     }
 
     /**
