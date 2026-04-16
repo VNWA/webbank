@@ -8,10 +8,11 @@ use App\Models\DeviceOperation;
 use App\Models\DeviceOperationLog;
 use App\Services\DuoPlusApi;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Filesystem\FilesystemAdapter;
 use Throwable;
 
 class ProcessDeviceOperation implements ShouldQueue
@@ -188,30 +189,12 @@ class ProcessDeviceOperation implements ShouldQueue
         $timing = (array) ($cfg['timing'] ?? []);
 
         $this->log($operation, 'start', 'Bắt đầu Bắc Á check login.');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'force_stop', "am force-stop {$package}");
-        $this->sendAdb($duoPlusApi, $device, $operation, 'sleep_short', 'sleep 0.35');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'open_app', "monkey -p {$package} -c android.intent.category.LAUNCHER 1");
-        $this->sendAdb($duoPlusApi, $device, $operation, 'wait_open', 'sleep 3');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'focus_password', 'input tap 193 839');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_password', $this->inputTextCommand($device->baca_pass));
-        $this->sendAdb($duoPlusApi, $device, $operation, 'tap_login', 'input tap 301 1005');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'wait_after_login', 'sleep 3');
+        $this->ensureBacaLogin($device, $duoPlusApi, $operation, $package, $tapCfg, $timing);
 
-        $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
-        $reveal = $tapCfg['reveal_balance'] ?? [968, 1003];
-        if (is_array($reveal)) {
-            $this->sendAdb($duoPlusApi, $device, $operation, 'reveal_balance', 'input tap '.$reveal[0].' '.$reveal[1]);
-        }
-        $this->sendAdb(
-            $duoPlusApi,
-            $device,
-            $operation,
-            'wait_reveal_balance',
-            'sleep '.number_format((float) ($timing['wait_reveal_balance'] ?? 1.3), 2, '.', ''),
-        );
+        $this->tapBacaRevealBalanceForAttempt($duoPlusApi, $device, $operation, $tapCfg, $timing, 1);
         $dumpAfterReveal = $this->dumpUiText($duoPlusApi, $device, $operation);
 
-        $ok = $this->containsAny($dumpAfterReveal !== '' ? $dumpAfterReveal : $dump, ['tài khoản thanh toán']);
+        $ok = $this->containsAny($dumpAfterReveal, ['tài khoản thanh toán']);
         $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
 
         if (! $ok) {
@@ -238,30 +221,21 @@ class ProcessDeviceOperation implements ShouldQueue
         $timing = (array) ($cfg['timing'] ?? []);
 
         $this->log($operation, 'start', 'Bắt đầu Bắc Á check số dư.');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'force_stop', "am force-stop {$package}");
-        $this->sendAdb($duoPlusApi, $device, $operation, 'sleep_short', 'sleep 0.35');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'open_app', "monkey -p {$package} -c android.intent.category.LAUNCHER 1");
-        $this->sendAdb($duoPlusApi, $device, $operation, 'wait_open', 'sleep 3');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'focus_password', 'input tap 193 839');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_password', $this->inputTextCommand($device->baca_pass));
-        $this->sendAdb($duoPlusApi, $device, $operation, 'tap_login', 'input tap 301 1005');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'wait_after_login', 'sleep 3');
+        $this->ensureBacaLogin($device, $duoPlusApi, $operation, $package, $tapCfg, $timing);
 
-        // Tap để hiện số dư (giống flow check_login).
-        $reveal = $tapCfg['reveal_balance'] ?? [968, 1003];
-        if (is_array($reveal)) {
-            $this->sendAdb($duoPlusApi, $device, $operation, 'reveal_balance', 'input tap '.$reveal[0].' '.$reveal[1]);
+        $balance = null;
+        $dump = '';
+        for ($attempt = 1; $attempt <= 3; $attempt++) {
+            $this->tapBacaRevealBalanceForAttempt($duoPlusApi, $device, $operation, $tapCfg, $timing, $attempt);
+            $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
+            $balance = $this->parseBalanceFromDump($dump);
+            if ($balance !== null) {
+                break;
+            }
+            if ($attempt < 3) {
+                $this->log($operation, 'reveal_balance_retry', 'Chưa đọc được số dư, thử lại tap mở che (lần '.($attempt + 1).').', 'warning');
+            }
         }
-        $this->sendAdb(
-            $duoPlusApi,
-            $device,
-            $operation,
-            'wait_reveal_balance',
-            'sleep '.number_format((float) ($timing['wait_reveal_balance'] ?? 1.3), 2, '.', ''),
-        );
-        $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
-
-        $balance = $this->parseBalanceFromDump($dump);
         $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
 
         if ($balance === null) {
@@ -506,8 +480,8 @@ class ProcessDeviceOperation implements ShouldQueue
             $ok = $this->containsAny($dump2, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
         }
 
-        $receiptUrl = $ok
-            ? $this->captureAndStoreReceiptScreenshot($operation, 'baca', $duoPlusApi, $device)
+        $receiptPng = $ok
+            ? $this->captureReceiptScreenshotPng($operation, $duoPlusApi, $device)
             : null;
 
         if (! $ok) {
@@ -529,9 +503,23 @@ class ProcessDeviceOperation implements ShouldQueue
 
         return [
             'ok' => true,
-            'message' => $this->formatMessageWithReceiptUrl(
+            'message' => $this->formatTransferSuccessMessage(
                 'Bắc Á chuyển tiền thành công'.($recipientName !== '' ? " ({$recipientName})" : '').'.',
-                $receiptUrl,
+                $this->sendReceiptToTelegram(
+                    $operation,
+                    'baca',
+                    $receiptPng,
+                    $this->buildTelegramReceiptCaption(
+                        $device,
+                        'baca',
+                        'Bắc Á Bank',
+                        $account,
+                        $bankName !== '' ? $bankName : $bankNameForSearch,
+                        $amount,
+                        $recipientName,
+                        $safeNote,
+                    ),
+                ),
             ),
         ];
     }
@@ -831,8 +819,8 @@ class ProcessDeviceOperation implements ShouldQueue
             $ok = $this->containsAny($dump3, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
         }
 
-        $receiptUrl = $ok
-            ? $this->captureAndStoreReceiptScreenshot($operation, 'pg', $duoPlusApi, $device)
+        $receiptPng = $ok
+            ? $this->captureReceiptScreenshotPng($operation, $duoPlusApi, $device)
             : null;
 
         if (! $ok) {
@@ -850,87 +838,207 @@ class ProcessDeviceOperation implements ShouldQueue
 
         return [
             'ok' => true,
-            'message' => $this->formatMessageWithReceiptUrl(
+            'message' => $this->formatTransferSuccessMessage(
                 'PG chuyển tiền thành công'.($recipientName !== '' ? " ({$recipientName})" : '').'.',
-                $receiptUrl,
+                $this->sendReceiptToTelegram(
+                    $operation,
+                    'pg',
+                    $receiptPng,
+                    $this->buildTelegramReceiptCaption(
+                        $device,
+                        'pg',
+                        'PG Bank',
+                        $account,
+                        $bankName !== '' ? $bankName : $bankQuery,
+                        $amount,
+                        $recipientName,
+                        $safeNote,
+                    ),
+                ),
             ),
         ];
     }
 
-    private function formatMessageWithReceiptUrl(string $baseMessage, ?string $receiptUrl): string
+    private function formatTransferSuccessMessage(string $baseMessage, bool $telegramSent): string
     {
-        if ($receiptUrl === null || $receiptUrl === '') {
-            return $baseMessage;
+        if ($telegramSent) {
+            return $baseMessage.' Đã gửi ảnh biên lai về Telegram.';
         }
 
-        return $baseMessage.' Ảnh: '.$receiptUrl;
+        return $baseMessage.' Chưa gửi được ảnh biên lai Telegram (xem log receipt_capture).';
     }
 
-    private function captureAndStoreReceiptScreenshot(
+    /**
+     * Chuỗi stdout từ DuoPlus command API (cat / base64 / …) — cùng các tầng lồng nhau như dump UI.
+     *
+     * @param  array<string, mixed>  $jsonRoot  Toàn bộ JSON phản hồi (giống $result['data'] từ DuoPlusApi::post).
+     */
+    private function extractDuoPlusCommandStdout(array $jsonRoot): string
+    {
+        foreach (['data.content', 'data.data.content', 'data.data.data.content'] as $path) {
+            $raw = (string) data_get($jsonRoot, $path, '');
+            if ($raw !== '') {
+                return $raw;
+            }
+        }
+
+        return '';
+    }
+
+    private function captureReceiptScreenshotPng(
         DeviceOperation $operation,
-        string $channel,
         DuoPlusApi $duoPlusApi,
         Device $device,
     ): ?string {
-        try {
-            $result = $duoPlusApi->command(
-                $device->duo_api_key,
-                $device->image_id,
-                'screencap -p /sdcard/receipt.png && base64 /sdcard/receipt.png',
-            );
-            if (! $result['ok']) {
-                $this->log($operation, 'receipt_capture', 'Không chụp được biên lai: '.$result['message'], 'warning');
-                return null;
-            }
+        $commands = [
+            'screencap -p /sdcard/receipt.png && base64 /sdcard/receipt.png',
+            'exec-out screencap -p | base64',
+        ];
 
-            $b64 = (string) data_get($result['data'], 'data.content', data_get($result['data'], 'data.data.content', ''));
-            $b64 = preg_replace('/\\s+/', '', $b64) ?? '';
-            if ($b64 === '') {
-                $this->log($operation, 'receipt_capture', 'Không có content base64 từ DuoPlus.', 'warning');
-                return null;
-            }
+        foreach ($commands as $cmdIdx => $command) {
+            $attempts = 0;
+            $lastFailReason = '';
+            do {
+                $attempts++;
+                try {
+                    $result = $duoPlusApi->command(
+                        $device->duo_api_key,
+                        $device->image_id,
+                        $command,
+                    );
+                    if (! $result['ok']) {
+                        $lastFailReason = $result['message'] !== '' ? $result['message'] : 'DuoPlus command lỗi.';
+                        if ($attempts < 3 && $this->isTransientCommandTimeout($lastFailReason)) {
+                            usleep(400_000);
 
-            $binary = base64_decode($b64, true);
-            if ($binary === false) {
-                $this->log($operation, 'receipt_capture', 'Base64 decode thất bại.', 'warning');
-                return null;
-            }
+                            continue;
+                        }
+                        break;
+                    }
 
-            $img = @imagecreatefromstring($binary);
-            if (! $img) {
-                $this->log($operation, 'receipt_capture', 'Không đọc được ảnh từ binary.', 'warning');
-                return null;
-            }
+                    $b64 = $this->extractDuoPlusCommandStdout($result['data']);
+                    $b64 = preg_replace('/\\s+/', '', $b64) ?? '';
+                    if ($b64 === '') {
+                        $lastFailReason = 'Không có content base64 từ DuoPlus.';
+                        $this->log($operation, 'receipt_capture', $lastFailReason.' (lệnh '.($cmdIdx + 1)."/{$attempts})", 'warning', [
+                            'keys' => array_keys((array) ($result['data'] ?? [])),
+                        ]);
+                        break;
+                    }
 
-            $w = imagesx($img);
-            $h = imagesy($img);
-            $maxW = 720;
-            if ($w > $maxW) {
-                $newH = (int) round($h * ($maxW / $w));
-                $scaled = imagescale($img, $maxW, $newH, IMG_BICUBIC_FIXED);
-                if ($scaled) {
+                    $binary = base64_decode($b64, true);
+                    if ($binary === false) {
+                        $lastFailReason = 'Base64 decode thất bại.';
+                        $this->log($operation, 'receipt_capture', $lastFailReason, 'warning');
+                        break;
+                    }
+
+                    $img = @imagecreatefromstring($binary);
+                    if (! $img) {
+                        $lastFailReason = 'Không đọc được ảnh từ binary (PNG không hợp lệ hoặc bị cắt).';
+                        $this->log($operation, 'receipt_capture', $lastFailReason, 'warning');
+                        break;
+                    }
                     imagedestroy($img);
-                    $img = $scaled;
+
+                    return $binary;
+                } catch (Throwable $e) {
+                    $lastFailReason = 'Exception: '.$e->getMessage();
+                    $this->log($operation, 'receipt_capture', 'Lỗi chụp biên lai: '.$e->getMessage(), 'warning');
+                    break;
                 }
+            } while ($attempts < 3);
+            if ($lastFailReason !== '' && $cmdIdx === count($commands) - 1) {
+                $this->log($operation, 'receipt_capture', 'Hết phương án chụp biên lai: '.$lastFailReason, 'warning');
+            }
+        }
+
+        return null;
+    }
+
+    private function buildTelegramReceiptCaption(
+        Device $device,
+        string $channel,
+        string $fromBank,
+        string $account,
+        string $toBank,
+        int $amount,
+        string $recipientName,
+        string $note,
+    ): string {
+        $machineCode = trim((string) $device->image_id);
+        $machineName = trim((string) ($device->name ?? ''));
+        $channelLabel = match ($channel) {
+            'baca' => 'Bac A Bank',
+            'pg' => 'PG Bank',
+            default => $channel,
+        };
+
+        $lines = [
+            'Chuyen khoan thanh cong',
+            'Ma may: '.($machineCode !== '' ? $machineCode : '-'),
+            'Ten may: '.($machineName !== '' ? $machineName : '-'),
+            'Kenh CK: '.$channelLabel,
+            'Ngan hang gui: '.$fromBank,
+            'Ngan hang nhan: '.($toBank !== '' ? $toBank : '-'),
+            'So tai khoan: '.($account !== '' ? $account : '-'),
+            'Nguoi nhan: '.($recipientName !== '' ? $recipientName : '-'),
+            'So tien: '.number_format($amount, 0, ',', '.').' VND',
+            'Noi dung: '.($note !== '' ? $note : '-'),
+            'Thoi gian: '.now()->format('Y-m-d H:i:s'),
+        ];
+
+        return mb_substr(implode("\n", $lines), 0, 1000);
+    }
+
+    private function sendReceiptToTelegram(DeviceOperation $operation, string $channel, ?string $png, string $caption): bool
+    {
+        if (! is_string($png) || $png === '') {
+            $this->log($operation, 'receipt_capture', 'Không gửi Telegram vì chưa có ảnh biên lai.', 'warning');
+
+            return false;
+        }
+
+        $token = (string) config('services.telegram.token', '');
+        $chatId = (string) config('services.telegram.chat_id', '');
+        if ($token === '' || $chatId === '') {
+            $this->log($operation, 'receipt_capture', 'Thiếu TELEGRAM_TOKEN hoặc TELEGRAM_CHAT_ID.', 'warning');
+
+            return false;
+        }
+
+        try {
+            $tmp = tempnam(sys_get_temp_dir(), 'receipt_');
+            if (! is_string($tmp) || $tmp === '') {
+                $this->log($operation, 'receipt_capture', 'Không tạo được file tạm để gửi Telegram.', 'warning');
+
+                return false;
+            }
+            file_put_contents($tmp, $png);
+            $response = Http::timeout(45)
+                ->asMultipart()
+                ->attach('photo', file_get_contents($tmp) ?: '', "receipt-{$channel}-op-{$operation->id}.png")
+                ->post("https://api.telegram.org/bot{$token}/sendPhoto", [
+                    'chat_id' => $chatId,
+                    'caption' => $caption !== '' ? $caption : "[$channel] Chuyen khoan thanh cong.",
+                ]);
+
+            @unlink($tmp);
+
+            if (! $response->successful() || data_get($response->json(), 'ok') !== true) {
+                $this->log($operation, 'receipt_capture', 'Gửi Telegram thất bại.', 'warning', [
+                    'status' => $response->status(),
+                    'body' => $response->body(),
+                ]);
+
+                return false;
             }
 
-            $dir = "transfer-receipts/{$channel}/".now()->format('Y/m/d');
-            $filename = 'op-'.$operation->id.'-'.now()->format('His').'.jpg';
-            $path = $dir.'/'.$filename;
-
-            ob_start();
-            imagejpeg($img, null, 50);
-            $jpeg = (string) ob_get_clean();
-            imagedestroy($img);
-
-            /** @var FilesystemAdapter $disk */
-            $disk = Storage::disk('public');
-            $disk->put($path, $jpeg);
-
-            return url($disk->url($path));
+            return true;
         } catch (Throwable $e) {
-            $this->log($operation, 'receipt_capture', 'Lỗi chụp biên lai: '.$e->getMessage(), 'warning');
-            return null;
+            $this->log($operation, 'receipt_capture', 'Lỗi gửi Telegram: '.$e->getMessage(), 'warning');
+
+            return false;
         }
     }
 
@@ -952,10 +1060,11 @@ class ProcessDeviceOperation implements ShouldQueue
             );
             if (! $result['ok']) {
                 $this->log($operation, 'debug_capture', 'Không chụp được ảnh debug: '.$result['message'], 'warning');
+
                 return null;
             }
 
-            $b64 = (string) data_get($result['data'], 'data.content', data_get($result['data'], 'data.data.content', ''));
+            $b64 = $this->extractDuoPlusCommandStdout($result['data']);
             $b64 = preg_replace('/\\s+/', '', $b64) ?? '';
             if ($b64 === '') {
                 return null;
@@ -993,6 +1102,7 @@ class ProcessDeviceOperation implements ShouldQueue
             /** @var FilesystemAdapter $disk */
             $disk = Storage::disk('public');
             $disk->put($path, $jpeg);
+
             return url($disk->url($path));
         } catch (Throwable) {
             return null;
@@ -1058,6 +1168,64 @@ class ProcessDeviceOperation implements ShouldQueue
         usleep((int) round($seconds * 1_000_000));
     }
 
+    /**
+     * Tap nút mở che số dư (mắt) trên home Bắc Á. Mỗi lần thử dùng chiến lược khác (tap đơn / tap đôi / tọa độ alt).
+     *
+     * @param  array<string, mixed>  $tapCfg
+     * @param  array<string, mixed>  $timing
+     */
+    private function tapBacaRevealBalanceForAttempt(
+        DuoPlusApi $duoPlusApi,
+        Device $device,
+        DeviceOperation $operation,
+        array $tapCfg,
+        array $timing,
+        int $attempt,
+    ): void {
+        $attempt = max(1, min(3, $attempt));
+
+        $primary = $this->normalizeTapPair($tapCfg['reveal_balance'] ?? null) ?? [954, 966];
+        $alt = isset($tapCfg['reveal_balance_alt']) ? $this->normalizeTapPair($tapCfg['reveal_balance_alt']) : null;
+
+        if ($attempt === 1) {
+            $w = (float) ($timing['wait_before_reveal_balance'] ?? 2.0);
+            if ($w > 0) {
+                $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_before_reveal_balance', $w);
+            }
+        } else {
+            $this->pauseLocal((float) ($timing['wait_between_reveal_retries'] ?? 0.9));
+        }
+
+        $xy = ($attempt === 3 && $alt !== null) ? $alt : $primary;
+
+        $this->tap($duoPlusApi, $device, $operation, "reveal_balance_try{$attempt}", $xy);
+
+        if ($attempt === 2) {
+            $this->pauseLocal((float) ($timing['wait_between_reveal_double_tap'] ?? 0.25));
+            $this->tap($duoPlusApi, $device, $operation, "reveal_balance_try{$attempt}_2", $xy);
+        }
+
+        $this->sleepCloud(
+            $duoPlusApi,
+            $device,
+            $operation,
+            'wait_reveal_balance',
+            (float) ($timing['wait_reveal_balance'] ?? 2.0),
+        );
+    }
+
+    /**
+     * @return array{0: int, 1: int}|null
+     */
+    private function normalizeTapPair(mixed $xy): ?array
+    {
+        if (! is_array($xy) || ! isset($xy[0], $xy[1])) {
+            return null;
+        }
+
+        return [(int) $xy[0], (int) $xy[1]];
+    }
+
     private function parseBalanceFromDump(string $dump): ?int
     {
         $text = mb_strtolower($dump);
@@ -1099,7 +1267,9 @@ class ProcessDeviceOperation implements ShouldQueue
                 foreach ($mm2 as $m) {
                     $raw = $m[1] ?? '';
                     $num = preg_replace('/[^0-9]/', '', $raw) ?? '';
-                    if ($num === '' || ! ctype_digit($num)) continue;
+                    if ($num === '' || ! ctype_digit($num)) {
+                        continue;
+                    }
                     $val = (int) $num;
                     $best = $best === null ? $val : max($best, $val);
                 }
@@ -1181,13 +1351,7 @@ class ProcessDeviceOperation implements ShouldQueue
             return '';
         }
 
-        $content = (string) data_get($result['data'], 'data.content', '');
-        if ($content === '') {
-            $content = (string) data_get($result['data'], 'data.data.content', '');
-        }
-        if ($content === '') {
-            $content = (string) data_get($result['data'], 'data.data.data.content', '');
-        }
+        $content = $this->extractDuoPlusCommandStdout($result['data']);
 
         $this->log($operation, 'dump_ui', 'Đã dump UI thành công.', 'info', [
             'preview' => str($content)->limit(300)->value(),
@@ -1218,8 +1382,8 @@ class ProcessDeviceOperation implements ShouldQueue
      *     input "VPBank"   + PG list → "VIET NAM THINH VUONG"
      *     input "PGBank"   + Bắc Á list → "PGBANK"
      *
-     * @param  array<string, string>  $map      bank_name_map config (override cứng)
-     * @param  list<string>           $bankList bank_list config
+     * @param  array<string, string>  $map  bank_name_map config (override cứng)
+     * @param  list<string>  $bankList  bank_list config
      */
     private function resolveBankNameForSearch(string $bankName, array $map, array $bankList = []): string
     {

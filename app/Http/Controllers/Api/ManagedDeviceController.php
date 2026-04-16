@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\DeviceUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\BulkDeleteManagedDevicesRequest;
 use App\Http\Requests\StoreDevicePowerRequest;
@@ -177,16 +178,22 @@ class ManagedDeviceController extends Controller
         $live = $duoPlusApi->liveDeviceStatusLabel($device->duo_api_key, $device->image_id);
 
         if ($action === 'on' && in_array($live, ['on', 'powering_on'], true)) {
+            $payload = ManagedDeviceResource::make($device->load('user:id,name'))->resolve();
+            DeviceUpdated::dispatch($payload);
+
             return response()->json([
                 'message' => $live === 'powering_on' ? 'Máy đang trong trạng thái bật nguồn.' : 'Máy đang bật.',
-                'data' => ManagedDeviceResource::make($device->load('user:id,name'))->resolve(),
+                'data' => $payload,
             ]);
         }
 
         if ($action === 'off' && $live === 'off') {
+            $payload = ManagedDeviceResource::make($device->load('user:id,name'))->resolve();
+            DeviceUpdated::dispatch($payload);
+
             return response()->json([
                 'message' => 'Máy đang tắt.',
-                'data' => ManagedDeviceResource::make($device->load('user:id,name'))->resolve(),
+                'data' => $payload,
             ]);
         }
 
@@ -200,9 +207,12 @@ class ManagedDeviceController extends Controller
             ], 422);
         }
 
+        $payload = ManagedDeviceResource::make($device->fresh()->load('user:id,name'))->resolve();
+        DeviceUpdated::dispatch($payload);
+
         return response()->json([
             'message' => $action === 'on' ? 'Đã gửi bật máy tới DuoPlus.' : 'Đã gửi tắt máy tới DuoPlus.',
-            'data' => ManagedDeviceResource::make($device->fresh()->load('user:id,name'))->resolve(),
+            'data' => $payload,
         ]);
     }
 

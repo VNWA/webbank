@@ -107,6 +107,9 @@ const searchDebounced = ref('');
 const operationsByDevice = ref<Record<number, DeviceOperation[]>>({});
 const loadingOperations = ref(false);
 
+/** Chỉ dùng khi máy đang powering_on / configuring — làm mới nhẹ trạng thái DuoPlus. */
+let deviceStatusPollTimer: ReturnType<typeof setInterval> | null = null;
+
 const selectedIds = computed<number[]>(() =>
     selectedItems.value.map((item) => Number(item.id)).filter((id) => Number.isFinite(id)),
 );
@@ -235,8 +238,11 @@ function applyDeviceBalances(deviceId: number, balances: DeviceBalances): void {
     tableItems.value.splice(idx, 1, row);
 }
 
-async function loadDevices(): Promise<void> {
-    loading.value = true;
+async function loadDevices(options?: { silent?: boolean }): Promise<void> {
+    const silent = options?.silent === true;
+    if (!silent) {
+        loading.value = true;
+    }
 
     try {
         const { data } = await http.get(managedDevices.index.url(), {
@@ -248,11 +254,67 @@ async function loadDevices(): Promise<void> {
         });
         tableItems.value = data.data as TableItem[];
         serverItemsLength.value = Number(data.meta.total ?? 0);
+        maybeStartDeviceStatusPoll();
     } catch (e) {
         toast.error(errorMessage(e));
     } finally {
-        loading.value = false;
+        if (!silent) {
+            loading.value = false;
+        }
     }
+}
+
+function mergeDeviceRow(row: Record<string, unknown>): void {
+    const id = Number(row.id);
+    if (!Number.isFinite(id)) {
+        return;
+    }
+
+    const idx = tableItems.value.findIndex((item) => Number(item.id) === id);
+    if (idx < 0) {
+        void loadDevices({ silent: true });
+        return;
+    }
+
+    const merged = { ...tableItems.value[idx], ...row };
+    tableItems.value.splice(idx, 1, merged);
+}
+
+function clearDeviceStatusPoll(): void {
+    if (deviceStatusPollTimer !== null) {
+        clearInterval(deviceStatusPollTimer);
+        deviceStatusPollTimer = null;
+    }
+}
+
+function tableHasTransitionalPowerStatus(): boolean {
+    return tableItems.value.some((item) => {
+        const s = String(item.device_status ?? '');
+        return s === 'powering_on' || s === 'configuring';
+    });
+}
+
+function maybeStartDeviceStatusPoll(): void {
+    if (!tableHasTransitionalPowerStatus()) {
+        clearDeviceStatusPoll();
+        return;
+    }
+
+    if (deviceStatusPollTimer !== null) {
+        return;
+    }
+
+    let attempts = 0;
+    const maxAttempts = 24;
+
+    deviceStatusPollTimer = setInterval(() => {
+        attempts += 1;
+        void loadDevices({ silent: true }).finally(() => {
+            if (!tableHasTransitionalPowerStatus() || attempts >= maxAttempts) {
+                clearDeviceStatusPoll();
+            }
+        });
+    }, 2500);
 }
 
 async function loadOperationFeed(silent = false): Promise<void> {
@@ -316,7 +378,13 @@ async function setPower(device: Device, action: 'on' | 'off'): Promise<void> {
     try {
         const { data } = await http.post(managedDevices.power.url({ device: device.id }), { action });
         toast.success(typeof data.message === 'string' ? data.message : 'Đã cập nhật nguồn.');
-        await loadDevices();
+        const payload = data.data as Record<string, unknown> | undefined;
+        if (payload && typeof payload === 'object' && payload.id !== undefined) {
+            mergeDeviceRow(payload);
+            maybeStartDeviceStatusPoll();
+        } else {
+            await loadDevices({ silent: true });
+        }
     } catch (error) {
         toast.error(errorMessage(error));
     }
@@ -404,12 +472,24 @@ onMounted(() => {
                 }
             },
         );
+
+        echo.private('devices').listen(
+            '.device.updated',
+            (event: { device?: Record<string, unknown> }) => {
+                if (event.device) {
+                    mergeDeviceRow(event.device);
+                    maybeStartDeviceStatusPoll();
+                }
+            },
+        );
     }
 });
 
 onBeforeUnmount(() => {
+    clearDeviceStatusPoll();
     if (echo !== null) {
         echo.leave('private-device-operations');
+        echo.leave('private-devices');
     }
 });
 </script>
@@ -556,7 +636,7 @@ onBeforeUnmount(() => {
                                         class="rounded border border-border/60 bg-background p-2">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <span class="font-medium">{{ operationLabel(operation.operation_type)
-                                                }}</span>
+                                            }}</span>
                                             <span class="rounded px-2 py-0.5 text-[11px]"
                                                 :class="operationStatusClass(operation.status)">
                                                 {{ operationStatusText(operation.status) }}
@@ -574,8 +654,8 @@ onBeforeUnmount(() => {
                                             </a>
                                             <a v-if="extractReceiptUrl(operation.result_message)"
                                                 :href="extractReceiptUrl(operation.result_message)!" target="_blank">
-                                                <img :src="extractReceiptUrl(operation.result_message)!"
-                                                    alt="Biên lai" loading="lazy"
+                                                <img :src="extractReceiptUrl(operation.result_message)!" alt="Biên lai"
+                                                    loading="lazy"
                                                     class="mt-1.5 max-h-48 rounded border border-border/60 object-contain" />
                                             </a>
                                         </div>

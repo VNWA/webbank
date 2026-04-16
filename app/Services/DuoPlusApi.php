@@ -70,10 +70,11 @@ class DuoPlusApi
      */
     public function command(string $apiKey, string $imageId, string $command): array
     {
+        // Screencap + base64 có thể rất lớn; 60s đôi khi không đủ hoặc bị cắt phản hồi.
         $result = $this->post($apiKey, '/api/v1/cloudPhone/command', [
             'image_id' => $imageId,
             'command' => $command,
-        ]);
+        ], 120);
 
         if (! $result['ok']) {
             return $result;
@@ -222,9 +223,9 @@ class DuoPlusApi
      * @param  array<string, mixed>  $payload
      * @return array{ok: bool, message: string, data: array<string, mixed>}
      */
-    private function post(string $apiKey, string $path, array $payload): array
+    private function post(string $apiKey, string $path, array $payload, int $timeoutSeconds = 60): array
     {
-        $response = Http::timeout(60)
+        $response = Http::timeout($timeoutSeconds)
             ->acceptJson()
             ->withHeaders([
                 'Lang' => 'zh',
