@@ -8,10 +8,9 @@ use App\Http\Controllers\UserManagementController;
 use App\Models\Device;
 use App\Models\User;
 use Illuminate\Support\Facades\Route;
-use Laravel\Fortify\Features;
 
 Route::inertia('/', 'Welcome', [
-    'canRegister' => Features::enabled(Features::registration()),
+    // Disable public user registration (users are created via Manager User).
 ])->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
