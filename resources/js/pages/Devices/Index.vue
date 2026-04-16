@@ -33,6 +33,10 @@ type Device = {
     baca_pin: string;
     pg_video_id: string;
     baca_video_id: string;
+    pg_balance: string | null;
+    baca_balance: string | null;
+    pg_balance_updated_at: string | null;
+    baca_balance_updated_at: string | null;
 };
 type DeviceOperationLog = {
     id: number;
@@ -41,10 +45,16 @@ type DeviceOperationLog = {
     message: string;
     created_at: string | null;
 };
+type DeviceBalances = {
+    pg_balance: string | null;
+    baca_balance: string | null;
+    pg_balance_updated_at: string | null;
+    baca_balance_updated_at: string | null;
+};
 type DeviceOperation = {
     id: number;
     device_id: number;
-    operation_type: 'pg_check_login' | 'baca_check_login';
+    operation_type: 'pg_check_login' | 'baca_check_login' | 'pg_balance' | 'baca_balance';
     status: OperationStatus;
     result_message: string | null;
     requested_by_name: string | null;
@@ -52,6 +62,7 @@ type DeviceOperation = {
     started_at: string | null;
     finished_at: string | null;
     logs: DeviceOperationLog[];
+    device_balances?: DeviceBalances | null;
 };
 
 defineOptions({
@@ -67,8 +78,24 @@ const headers: TableHeader[] = [
     { text: '', value: 'device_status', width: 10 },
     { text: 'Image ID', value: 'image_id', sortable: true },
     { text: 'Tên thiết bị', value: 'name', sortable: true },
+    { text: 'PG Số dư', value: 'pg_balance' },
+    { text: 'Bắc Á Số dư', value: 'baca_balance' },
     { text: '', value: 'actions' },
 ];
+
+function formatCurrency(raw: string | null | undefined): string {
+    if (!raw) return '—';
+    const numeric = Number(String(raw).replace(/,/g, ''));
+    if (!Number.isFinite(numeric)) return String(raw);
+    return numeric.toLocaleString('vi-VN') + ' VND';
+}
+
+function formatUpdatedAt(raw: string | null | undefined): string {
+    if (!raw) return '—';
+    const d = new Date(raw);
+    if (Number.isNaN(d.getTime())) return '—';
+    return d.toLocaleString('vi-VN');
+}
 
 const tableItems = ref<TableItem[]>([]);
 const selectedItems = ref<TableItem[]>([]);
@@ -116,6 +143,14 @@ function operationLabel(type: string): string {
 
     if (type === 'baca_check_login') {
         return 'Bắc Á Check Login';
+    }
+
+    if (type === 'pg_balance') {
+        return 'PG Số dư';
+    }
+
+    if (type === 'baca_balance') {
+        return 'Bắc Á Số dư';
     }
 
     return type;
@@ -172,6 +207,21 @@ function upsertOperation(nextOperation: DeviceOperation): void {
         ...operationsByDevice.value,
         [nextOperation.device_id]: merged,
     };
+
+    if (nextOperation.device_balances) {
+        applyDeviceBalances(nextOperation.device_id, nextOperation.device_balances);
+    }
+}
+
+function applyDeviceBalances(deviceId: number, balances: DeviceBalances): void {
+    const idx = tableItems.value.findIndex((item) => Number(item.id) === deviceId);
+    if (idx < 0) return;
+    const row = { ...tableItems.value[idx] } as Record<string, unknown>;
+    if (balances.pg_balance !== undefined) row.pg_balance = balances.pg_balance;
+    if (balances.baca_balance !== undefined) row.baca_balance = balances.baca_balance;
+    if (balances.pg_balance_updated_at !== undefined) row.pg_balance_updated_at = balances.pg_balance_updated_at;
+    if (balances.baca_balance_updated_at !== undefined) row.baca_balance_updated_at = balances.baca_balance_updated_at;
+    tableItems.value.splice(idx, 1, row);
 }
 
 async function loadDevices(): Promise<void> {
@@ -279,6 +329,31 @@ async function runCheckLogin(device: Device, operationType: 'pg_check_login' | '
     }
 }
 
+async function runOperation(
+    device: Device,
+    operationType: 'pg_check_login' | 'baca_check_login' | 'pg_balance' | 'baca_balance' | 'baca_test_pin',
+): Promise<void> {
+    if (operationType === 'pg_check_login' || operationType === 'baca_check_login') {
+        await runCheckLogin(device, operationType);
+        return;
+    }
+
+    if (isBusy(device.id)) {
+        toast.warning('Thiết bị đang chạy lệnh khác, không thể chạy thêm.');
+        return;
+    }
+
+    try {
+        const { data } = await http.post(managedDevices.operations.store.url({ device: device.id }), {
+            operation_type: operationType,
+        });
+        toast.success(typeof data.message === 'string' ? data.message : 'Đã gửi lệnh.');
+        await loadOperationFeed(true);
+    } catch (error) {
+        toast.error(errorMessage(error));
+    }
+}
+
 async function deleteSelected(): Promise<void> {
     if (selectedIds.value.length === 0) {
         return;
@@ -370,6 +445,26 @@ onBeforeUnmount(() => {
                                     <div v-else class="h-3 w-3 shrink-0 rounded-full bg-amber-500" />
                                 </div>
                             </template>
+                            <template #item-pg_balance="item">
+                                <div class="text-xs">
+                                    <div class="font-medium text-foreground">
+                                        {{ formatCurrency((item as Device).pg_balance) }}
+                                    </div>
+                                    <div class="text-muted-foreground">
+                                        update: {{ formatUpdatedAt((item as Device).pg_balance_updated_at) }}
+                                    </div>
+                                </div>
+                            </template>
+                            <template #item-baca_balance="item">
+                                <div class="text-xs">
+                                    <div class="font-medium text-foreground">
+                                        {{ formatCurrency((item as Device).baca_balance) }}
+                                    </div>
+                                    <div class="text-muted-foreground">
+                                        update: {{ formatUpdatedAt((item as Device).baca_balance_updated_at) }}
+                                    </div>
+                                </div>
+                            </template>
                             <template #item-actions="item">
                                 <div class="flex flex-col gap-2 py-2" v-if="!isBusy((item as Device).id)">
                                     <div class="flex flex-wrap items-centeE gap-2 pb-2">
@@ -391,6 +486,12 @@ onBeforeUnmount(() => {
                                             :disabled="isBusy((item as Device).id)"
                                             :href="deviceManagement.edit({ device: (item as Device).id })">
                                             Sửa
+                                        </AppButton>
+                                        <AppButton v-if="item.device_status == 'on' || item.device_status == 'off'"
+                                            :as="Link" size="sm" color="primary" variant="solid"
+                                            :disabled="isBusy((item as Device).id)"
+                                            :href="deviceManagement.transfer({ device: (item as Device).id })">
+                                            Chuyển tiền
                                         </AppButton>
                                         <AppButton v-if="item.device_status == 'on' || item.device_status == 'off'"
                                             type="button" size="sm" color="error" variant="solid"
@@ -418,6 +519,12 @@ onBeforeUnmount(() => {
                                                 @click="runCheckLogin(item as Device, 'baca_check_login')">
                                                 <span>Bắc Á Check Login</span>
                                             </AppButton>
+                                            <AppButton type="button" size="xs" variant="outline" color="warning"
+                                                :disabled="isBusy((item as Device).id)"
+                                                @click="runOperation(item as Device, 'baca_balance')">
+                                                <span>Bắc Á Số dư</span>
+                                            </AppButton>
+
                                         </div>
                                     </div>
                                 </div>
@@ -438,7 +545,7 @@ onBeforeUnmount(() => {
                                         class="rounded border border-border/60 bg-background p-2">
                                         <div class="flex flex-wrap items-center gap-2">
                                             <span class="font-medium">{{ operationLabel(operation.operation_type)
-                                            }}</span>
+                                                }}</span>
                                             <span class="rounded px-2 py-0.5 text-[11px]"
                                                 :class="operationStatusClass(operation.status)">
                                                 {{ operationStatusText(operation.status) }}

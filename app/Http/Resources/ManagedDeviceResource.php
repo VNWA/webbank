@@ -30,6 +30,10 @@ class ManagedDeviceResource extends JsonResource
             'baca_pin' => $this->baca_pin,
             'pg_video_id' => $this->pg_video_id,
             'baca_video_id' => $this->baca_video_id,
+            'pg_balance' => $this->pg_balance,
+            'baca_balance' => $this->baca_balance,
+            'pg_balance_updated_at' => $this->pg_balance_updated_at?->toIso8601String(),
+            'baca_balance_updated_at' => $this->baca_balance_updated_at?->toIso8601String(),
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];

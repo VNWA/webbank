@@ -7,6 +7,21 @@ use Illuminate\Support\Facades\Http;
 class DuoPlusApi
 {
     /**
+     * Bật livestream (quét mặt) cho cloud phone.
+     *
+     * @return array{ok: bool, message: string, data: array<string, mixed>}
+     */
+    public function startLivestream(string $apiKey, string $imageId, string $videoId): array
+    {
+        return $this->post($apiKey, '/api/v1/cloudPhone/live', [
+            'image_id' => $imageId,
+            'id' => $videoId,
+            'status' => 1,
+            'loop' => 1,
+        ]);
+    }
+
+    /**
      * Gọi batch power on theo docs DuoPlus; `ok` chỉ true khi `image_id` nằm trong `data.success`.
      *
      * @see https://help.duoplus.net/docs/batch-power-on

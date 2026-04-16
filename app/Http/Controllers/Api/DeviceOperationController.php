@@ -56,6 +56,12 @@ class DeviceOperationController extends Controller
     {
         $validated = $request->validated();
 
+        if ($this->isBlockedRecipientBank($validated['operation_type'], $validated['operation_payload'] ?? null)) {
+            return response()->json([
+                'message' => 'Không thể chuyển cùng ngân hàng với kênh đã chọn.',
+            ], 422);
+        }
+
         $runningExists = DeviceOperation::query()
             ->where('device_id', $device->id)
             ->whereIn('status', ['queued', 'running'])
@@ -71,16 +77,44 @@ class DeviceOperationController extends Controller
             'device_id' => $device->id,
             'requested_by' => $request->user()->id,
             'operation_type' => $validated['operation_type'],
+            'operation_payload' => $validated['operation_payload'] ?? null,
             'status' => 'queued',
         ]);
 
         ProcessDeviceOperation::dispatch($operation->id)->onQueue('devices');
-        DeviceOperationUpdated::dispatch($this->toArray($operation->load(['logs', 'requester:id,name'])));
+        DeviceOperationUpdated::dispatch($operation->load(['logs', 'requester:id,name'])->toBroadcastArray());
 
         return response()->json([
             'message' => 'Đã đưa lệnh vào hàng đợi xử lý.',
             'operation' => $this->toArray($operation->load(['logs', 'requester:id,name'])),
         ], 202);
+    }
+
+    /**
+     * Chặn chuyển cùng bank theo kênh:
+     * - pg_transfer không được chuyển tới PG Bank
+     * - baca_transfer không được chuyển tới Bắc Á
+     */
+    private function isBlockedRecipientBank(string $operationType, mixed $payload): bool
+    {
+        if (! in_array($operationType, ['pg_transfer', 'baca_transfer'], true)) {
+            return false;
+        }
+
+        if (! is_array($payload)) {
+            return false;
+        }
+
+        $code = strtoupper((string) ($payload['bank_code'] ?? ''));
+        $name = strtoupper((string) ($payload['bank_name'] ?? ''));
+        $name = preg_replace('/[^A-Z0-9]+/', '', $name) ?? $name;
+
+        if ($operationType === 'pg_transfer') {
+            return $code === 'PGBANK' || str_contains($name, 'PGBANK') || str_contains($name, 'PGBANK');
+        }
+
+        // baca_transfer
+        return $code === 'BACABANK' || str_contains($name, 'BACABANK') || str_contains($name, 'BACA');
     }
 
     private function toArray(DeviceOperation $operation): array

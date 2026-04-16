@@ -28,7 +28,8 @@ class StoreDeviceOperationRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'operation_type' => ['required', 'string', 'in:pg_check_login,baca_check_login'],
+            'operation_type' => ['required', 'string', 'in:pg_check_login,baca_check_login,pg_balance,baca_balance,pg_transfer,baca_transfer,baca_test_pin'],
+            'operation_payload' => ['nullable', 'array'],
         ];
     }
 }

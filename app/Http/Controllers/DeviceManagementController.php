@@ -47,4 +47,17 @@ class DeviceManagementController extends Controller
             ]),
         ]);
     }
+
+    public function transfer(Request $request, Device $device): Response
+    {
+        $this->authorize('update', $device);
+
+        return Inertia::render('Devices/Transfer', [
+            'device' => $device->only([
+                'id',
+                'name',
+                'image_id',
+            ]),
+        ]);
+    }
 }

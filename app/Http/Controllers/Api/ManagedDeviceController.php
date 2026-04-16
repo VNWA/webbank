@@ -9,6 +9,7 @@ use App\Http\Requests\StoreManagedDeviceRequest;
 use App\Http\Requests\UpdateManagedDeviceRequest;
 use App\Http\Resources\ManagedDeviceResource;
 use App\Models\Device;
+use App\Services\BankLookupApi;
 use App\Services\DuoPlusApi;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -131,6 +132,38 @@ class ManagedDeviceController extends Controller
             'files' => $result['files'],
             'pagination' => $result['pagination'],
         ]);
+    }
+
+    public function listBankLookupBanks(Request $request, BankLookupApi $bankLookupApi): JsonResponse
+    {
+        $this->authorize('viewAny', Device::class);
+
+        $result = $bankLookupApi->listBanks();
+
+        return response()->json([
+            'message' => $result['message'],
+            'data' => [
+                'ok' => $result['ok'],
+                'banks' => $result['banks'],
+            ],
+        ], $result['ok'] ? 200 : 422);
+    }
+
+    public function lookupBankLookupAccountName(Request $request, BankLookupApi $bankLookupApi): JsonResponse
+    {
+        $this->authorize('viewAny', Device::class);
+
+        $data = $request->validate([
+            'bank' => ['required', 'string', 'max:50'],
+            'account' => ['required', 'string', 'max:50'],
+        ]);
+
+        $result = $bankLookupApi->lookupAccountName($data['bank'], $data['account']);
+
+        return response()->json([
+            'message' => $result['message'],
+            'data' => $result,
+        ], $result['ok'] ? 200 : 422);
     }
 
     /**

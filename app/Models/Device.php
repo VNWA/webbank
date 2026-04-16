@@ -25,7 +25,21 @@ class Device extends Model
         'baca_pin',
         'pg_video_id',
         'baca_video_id',
+        'pg_balance',
+        'baca_balance',
+        'pg_balance_updated_at',
+        'baca_balance_updated_at',
     ];
+
+    protected function casts(): array
+    {
+        return [
+            'pg_balance' => 'decimal:2',
+            'baca_balance' => 'decimal:2',
+            'pg_balance_updated_at' => 'datetime',
+            'baca_balance_updated_at' => 'datetime',
+        ];
+    }
 
     /**
      * Mỗi lần serialize / đọc thuộc tính sẽ gọi DuoPlus Cloud Phone Status (không lưu DB).

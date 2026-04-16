@@ -28,6 +28,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('device-management/{device}/edit', [DeviceManagementController::class, 'edit'])
         ->name('device-management.edit')
         ->can('update', 'device');
+    Route::get('device-management/{device}/transfer', [DeviceManagementController::class, 'transfer'])
+        ->name('device-management.transfer')
+        ->can('update', 'device');
 
     Route::prefix('api')->group(function () {
         Route::get('managed-users', [ManagedUserController::class, 'index'])
@@ -55,6 +58,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('managed-devices/duoplus-files', [ManagedDeviceController::class, 'fetchDuoPlusFiles'])
             ->name('api.managed-devices.duoplus-files')
             ->can('create', Device::class);
+        Route::get('managed-devices/banklookup/banks', [ManagedDeviceController::class, 'listBankLookupBanks'])
+            ->name('api.managed-devices.banklookup.banks')
+            ->can('viewAny', Device::class);
+        Route::post('managed-devices/banklookup/account-name', [ManagedDeviceController::class, 'lookupBankLookupAccountName'])
+            ->name('api.managed-devices.banklookup.account-name')
+            ->can('viewAny', Device::class);
         Route::put('managed-devices/{device}', [ManagedDeviceController::class, 'update'])
             ->name('api.managed-devices.update')
             ->can('update', 'device');
