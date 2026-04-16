@@ -465,18 +465,16 @@ class ProcessDeviceOperation implements ShouldQueue
             $didFaceScan = true;
         }
 
-        // OTP / Smart PIN entry
+        // OTP / Smart PIN entry — cùng luồng tap focus + numpad cho mọi mức tiền (botBank).
         $pin = preg_replace('/\D+/', '', (string) $device->baca_pin) ?? '';
         if (strlen($pin) !== 6) {
             return ['ok' => false, 'message' => 'PIN Bắc Á không hợp lệ (cần 6 số).'];
         }
 
-        $waitBeforeOtp = (float) ($timing['wait_before_otp'] ?? 0.6);
-        // Đã chờ quét mặt xong 2s rồi (botBank), nên không cộng thêm delay trước OTP.
         if ($didFaceScan) {
-            $waitBeforeOtp = 0.0;
+            $this->pauseLocal((float) ($timing['wait_after_face_scan_before_otp'] ?? 1.2));
         }
-        $this->pauseLocal($waitBeforeOtp);
+        $this->pauseLocal((float) ($timing['wait_before_otp'] ?? 0.6));
         $digits = (array) ($cfg['numpad_digits'] ?? []);
 
         $focus = $tap['otp_focus'] ?? null;
@@ -508,7 +506,9 @@ class ProcessDeviceOperation implements ShouldQueue
             $ok = $this->containsAny($dump2, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
         }
 
-        $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
+        $receiptUrl = $ok
+            ? $this->captureAndStoreReceiptScreenshot($operation, 'baca', $duoPlusApi, $device)
+            : null;
 
         if (! $ok) {
             return [
@@ -516,6 +516,8 @@ class ProcessDeviceOperation implements ShouldQueue
                 'message' => 'Bắc Á chuyển tiền thất bại (không thấy marker thành công).',
             ];
         }
+
+        // Chuyển tiền: không đóng app (thành công hay thất bại) — lần chạy sau ensure*Login vẫn force-stop trước khi mở app.
 
         // Update cached balance (best-effort)
         if ($device->baca_balance !== null) {
@@ -527,12 +529,9 @@ class ProcessDeviceOperation implements ShouldQueue
 
         return [
             'ok' => true,
-            'message' => $this->appendReceiptUrl(
-                operation: $operation,
-                channel: 'baca',
-                baseMessage: 'Bắc Á chuyển tiền thành công'.($recipientName !== '' ? " ({$recipientName})" : '').'.',
-                duoPlusApi: $duoPlusApi,
-                device: $device,
+            'message' => $this->formatMessageWithReceiptUrl(
+                'Bắc Á chuyển tiền thành công'.($recipientName !== '' ? " ({$recipientName})" : '').'.',
+                $receiptUrl,
             ),
         ];
     }
@@ -688,15 +687,11 @@ class ProcessDeviceOperation implements ShouldQueue
 
         if ($requireFaceScan) {
             if ((string) $device->pg_video_id === '') {
-                $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
-
                 return ['ok' => false, 'message' => 'Thiếu `pg_video_id` để bật livestream (>= 10tr).'];
             }
             $this->log($operation, 'livestream', 'Bật livestream để quét mặt (>=10tr).');
             $live = $duoPlusApi->startLivestream($device->duo_api_key, $device->image_id, (string) $device->pg_video_id);
             if (! $live['ok']) {
-                $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
-
                 return ['ok' => false, 'message' => 'Không bật được livestream: '.$live['message']];
             }
         }
@@ -766,9 +761,7 @@ class ProcessDeviceOperation implements ShouldQueue
         if (str_contains($lowBeforePin, 'chọn tài khoản/thẻ') ||
             (str_contains($dumpBeforePin, 'id/submit') && str_contains($lowBeforePin, 'thông tin chuyển tiền'))
         ) {
-            $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
-
-            return ['ok' => false, 'message' => 'PG vẫn ở form chuyển tiền, chưa vào màn PIN. Đã hủy.'];
+            return ['ok' => false, 'message' => 'PG vẫn ở form chuyển tiền, chưa vào màn PIN.'];
         }
 
         if ($requireFaceScan) {
@@ -778,8 +771,6 @@ class ProcessDeviceOperation implements ShouldQueue
         // PIN entry — botBank: tap focus → (face_scan: DEL×4) → retap + keyevent per digit
         $pin = preg_replace('/\D+/', '', (string) $device->pg_pin) ?? '';
         if (strlen($pin) !== 6) {
-            $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
-
             return ['ok' => false, 'message' => 'PIN PG không hợp lệ (cần 6 số).'];
         }
 
@@ -802,7 +793,7 @@ class ProcessDeviceOperation implements ShouldQueue
             $this->sendAdb($duoPlusApi, $device, $operation, "otp_digit_{$d}_{$i}", 'input keyevent '.($keycodeBase + $d));
             $this->pauseLocal(0.1);
         }
-        $this->pauseLocal(2.0);
+        $this->pauseLocal((float) ($timing['wait_after_otp'] ?? 2.0));
 
         // Success / error detection
         $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
@@ -814,7 +805,6 @@ class ProcessDeviceOperation implements ShouldQueue
             if (is_array($lockDismiss)) {
                 $this->tap($duoPlusApi, $device, $operation, 'tap_otp_lock_dismiss', $lockDismiss);
             }
-            $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
 
             return ['ok' => false, 'message' => 'App khoá Smart OTP (sai mật khẩu nhiều lần). Cần kích hoạt lại.'];
         }
@@ -825,7 +815,6 @@ class ProcessDeviceOperation implements ShouldQueue
             if (is_array($pinDismiss)) {
                 $this->tap($duoPlusApi, $device, $operation, 'tap_pin_wrong_dismiss', $pinDismiss);
             }
-            $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
 
             return ['ok' => false, 'message' => 'PIN PG không chính xác. Kiểm tra lại pg_pin trong database.'];
         }
@@ -842,11 +831,15 @@ class ProcessDeviceOperation implements ShouldQueue
             $ok = $this->containsAny($dump3, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
         }
 
-        $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
+        $receiptUrl = $ok
+            ? $this->captureAndStoreReceiptScreenshot($operation, 'pg', $duoPlusApi, $device)
+            : null;
 
         if (! $ok) {
             return ['ok' => false, 'message' => 'PG chuyển tiền thất bại (không thấy marker thành công).'];
         }
+
+        // Chuyển tiền: không đóng app — lần chạy sau ensurePgLogin vẫn force-stop trước khi mở app.
 
         if ($device->pg_balance !== null) {
             $device->forceFill([
@@ -857,29 +850,20 @@ class ProcessDeviceOperation implements ShouldQueue
 
         return [
             'ok' => true,
-            'message' => $this->appendReceiptUrl(
-                operation: $operation,
-                channel: 'pg',
-                baseMessage: 'PG chuyển tiền thành công'.($recipientName !== '' ? " ({$recipientName})" : '').'.',
-                duoPlusApi: $duoPlusApi,
-                device: $device,
+            'message' => $this->formatMessageWithReceiptUrl(
+                'PG chuyển tiền thành công'.($recipientName !== '' ? " ({$recipientName})" : '').'.',
+                $receiptUrl,
             ),
         ];
     }
 
-    private function appendReceiptUrl(
-        DeviceOperation $operation,
-        string $channel,
-        string $baseMessage,
-        DuoPlusApi $duoPlusApi,
-        Device $device,
-    ): string {
-        $url = $this->captureAndStoreReceiptScreenshot($operation, $channel, $duoPlusApi, $device);
-        if ($url === null) {
+    private function formatMessageWithReceiptUrl(string $baseMessage, ?string $receiptUrl): string
+    {
+        if ($receiptUrl === null || $receiptUrl === '') {
             return $baseMessage;
         }
 
-        return $baseMessage.' Ảnh: '.$url;
+        return $baseMessage.' Ảnh: '.$receiptUrl;
     }
 
     private function captureAndStoreReceiptScreenshot(

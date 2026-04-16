@@ -36,6 +36,17 @@ const pollTimer = ref<number | null>(null);
 
 const runningCount = computed(() => operations.value.filter((o) => o.status === 'queued' || o.status === 'running').length);
 
+function extractReceiptUrl(msg: string | null): string | null {
+    if (!msg) return null;
+    const m = msg.match(/https?:\/\/\S+\.(?:jpg|jpeg|png|webp)/i);
+    return m ? m[0] : null;
+}
+
+function extractResultText(msg: string | null): string {
+    if (!msg) return '';
+    return msg.replace(/\s*Ảnh:\s*https?:\/\/\S+/i, '').trim();
+}
+
 function statusText(status: OperationStatus): string {
     if (status === 'queued') return 'Đợi chạy';
     if (status === 'running') return 'Đang chạy';
@@ -167,7 +178,11 @@ onBeforeUnmount(() => {
                         {{ op.operation_type }} • {{ op.requested_by_name ?? 'N/A' }}
                     </div>
                     <div v-if="op.result_message" class="text-xs text-muted-foreground line-clamp-2">
-                        {{ op.result_message }}
+                        {{ extractResultText(op.result_message) }}
+                        <a v-if="extractReceiptUrl(op.result_message)"
+                            :href="extractReceiptUrl(op.result_message)!" target="_blank"
+                            class="ml-1 text-primary underline hover:text-primary/80"
+                            @click.stop>Xem ảnh</a>
                     </div>
                 </DropdownMenuItem>
             </template>

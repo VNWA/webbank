@@ -24,7 +24,9 @@ return [
         'wait_after_otp_digits' => 0.5,
         'wait_after_confirm' => 3.0,
         'wait_after_success_retry' => 3.0,
-        'wait_face_scan' => 2.0,
+        'wait_face_scan' => 5.0,
+        // Sau khi chờ quét mặt (livestream), thêm delay trước khi nhập OTP — app cần thời gian chuyển màn.
+        'wait_after_face_scan_before_otp' => 1.0,
         'wait_reveal_balance' => 1.3,
 
         // Load list bank/search results

@@ -136,6 +136,17 @@ function errorMessage(err: unknown): string {
     return 'Đã xảy ra lỗi.';
 }
 
+function extractReceiptUrl(msg: string | null): string | null {
+    if (!msg) return null;
+    const m = msg.match(/https?:\/\/\S+\.(?:jpg|jpeg|png|webp)/i);
+    return m ? m[0] : null;
+}
+
+function extractResultText(msg: string | null): string {
+    if (!msg) return '';
+    return msg.replace(/\s*Ảnh:\s*https?:\/\/\S+/i, '').trim();
+}
+
 function operationLabel(type: string): string {
     if (type === 'pg_check_login') {
         return 'PG Check Login';
@@ -554,9 +565,20 @@ onBeforeUnmount(() => {
                                                 {{ operation.requested_by_name ?? 'N/A' }}
                                             </span>
                                         </div>
-                                        <p v-if="operation.result_message" class="mt-1 text-muted-foreground">
-                                            {{ operation.result_message }}
-                                        </p>
+                                        <div v-if="operation.result_message" class="mt-1 text-muted-foreground">
+                                            <p>{{ extractResultText(operation.result_message) }}</p>
+                                            <a v-if="extractReceiptUrl(operation.result_message)"
+                                                :href="extractReceiptUrl(operation.result_message)!" target="_blank"
+                                                class="mt-1.5 inline-block text-xs text-primary underline hover:text-primary/80">
+                                                Xem ảnh biên lai
+                                            </a>
+                                            <a v-if="extractReceiptUrl(operation.result_message)"
+                                                :href="extractReceiptUrl(operation.result_message)!" target="_blank">
+                                                <img :src="extractReceiptUrl(operation.result_message)!"
+                                                    alt="Biên lai" loading="lazy"
+                                                    class="mt-1.5 max-h-48 rounded border border-border/60 object-contain" />
+                                            </a>
+                                        </div>
                                         <div v-if="operation.logs.length" class="mt-2 space-y-1">
                                             <div v-for="log in operation.logs" :key="log.id"
                                                 class="rounded bg-muted/40 px-2 py-1 text-[11px]">
