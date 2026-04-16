@@ -25,4 +25,9 @@ export default defineConfig({
             formVariants: true,
         }),
     ],
+    // `lightningcss minify` đang fail với CSS của `vue3-easy-data-table` (var(--*) bị parse lỗi).
+    build: {
+        // Tắt minify CSS để build production không vỡ do parser lightningcss/esbuild.
+        cssMinify: false,
+    },
 });
