@@ -90,28 +90,42 @@ class BankLookupApi
 
         $path = (string) (config('banklookup.account_path') ?? '/api/account-name');
 
-        $response = Http::timeout($this->timeout)
-            ->acceptJson()
-            ->withHeaders([
-                'x-api-key' => $this->apiKey,
-                'x-api-secret' => $this->secretKey,
-                'Content-Type' => 'application/json',
-            ])
-            ->asJson()
-            ->post($this->baseUrl.$path, [
-                'bank' => $bankCode,
-                'account' => $accountNumber,
-            ]);
+        $requestUrl = $this->baseUrl.$path;
 
-        if (! $response->successful()) {
+        try {
+            $response = Http::timeout($this->timeout)
+                ->acceptJson()
+                ->withHeaders([
+                    'x-api-key' => $this->apiKey,
+                    'x-api-secret' => $this->secretKey,
+                    'Content-Type' => 'application/json',
+                ])
+                ->asJson()
+                ->post($requestUrl, [
+                    'bank' => $bankCode,
+                    'account' => $accountNumber,
+                ]);
+        } catch (\Throwable $e) {
             return [
                 'ok' => false,
-                'message' => 'Tra cứu tên người nhận thất bại.',
+                'message' => "Lỗi kết nối banklookup: {$e->getMessage()} | URL: {$requestUrl}",
                 'recipient_name' => '',
             ];
         }
 
-        $raw = $response->json();
+        $raw = is_array($response->json()) ? $response->json() : [];
+        $apiMessage = $this->extractFirstString($raw, ['message', 'data.message', 'error', 'data.error']);
+
+        if (! $response->successful()) {
+            $detail = $apiMessage !== '' ? $apiMessage : $response->body();
+
+            return [
+                'ok' => false,
+                'message' => "Tra cứu thất bại (HTTP {$response->status()}): {$detail} | URL: {$requestUrl} | bank={$bankCode} account={$accountNumber}",
+                'recipient_name' => '',
+            ];
+        }
+
         $recipientName = $this->extractFirstString($raw, [
             'data.recipient_name',
             'data.account_name',
@@ -121,9 +135,17 @@ class BankLookupApi
         ]);
         $recipientName = trim($recipientName);
 
+        if ($recipientName === '') {
+            return [
+                'ok' => false,
+                'message' => 'API trả OK nhưng không có tên người nhận. Response: '.json_encode($raw, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+                'recipient_name' => '',
+            ];
+        }
+
         return [
-            'ok' => $recipientName !== '',
-            'message' => (string) ($this->extractFirstString($raw, ['message', 'data.message']) ?: 'OK'),
+            'ok' => true,
+            'message' => $apiMessage !== '' ? $apiMessage : 'OK',
             'recipient_name' => $recipientName,
         ];
     }
