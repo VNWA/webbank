@@ -1,0 +1,63 @@
+<?php
+
+namespace App\Models;
+
+use App\Services\DuoPlusApi;
+use Illuminate\Database\Eloquent\Casts\Attribute;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+
+class Device extends Model
+{
+    use HasFactory;
+
+    protected $fillable = [
+        'user_id',
+        'status',
+        'duo_api_key',
+        'image_id',
+        'name',
+        'pg_pass',
+        'pg_pin',
+        'baca_pass',
+        'baca_pin',
+        'pg_video_id',
+        'baca_video_id',
+    ];
+
+    /**
+     * Mỗi lần serialize / đọc thuộc tính sẽ gọi DuoPlus Cloud Phone Status (không lưu DB).
+     *
+     * @see https://help.duoplus.net/docs/cloud-phone-status
+     */
+    protected $appends = [
+        'device_status',
+    ];
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
+    }
+
+    public function operations(): HasMany
+    {
+        return $this->hasMany(DeviceOperation::class)->latest('id');
+    }
+
+    /**
+     * Nhãn trạng thái nguồn từ DuoPlus (`on`, `off`, `unknown`, …).
+     */
+    protected function deviceStatus(): Attribute
+    {
+        return Attribute::make(
+            get: function (): string {
+                return app(DuoPlusApi::class)->liveDeviceStatusLabel(
+                    (string) $this->duo_api_key,
+                    (string) $this->image_id,
+                );
+            },
+        );
+    }
+}

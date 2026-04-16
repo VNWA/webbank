@@ -1,0 +1,32 @@
+<?php
+
+namespace App\Http\Requests;
+
+use App\Models\Device;
+use Illuminate\Contracts\Validation\ValidationRule;
+use Illuminate\Foundation\Http\FormRequest;
+
+class StoreDevicePowerRequest extends FormRequest
+{
+    /**
+     * Determine if the user is authorized to make this request.
+     */
+    public function authorize(): bool
+    {
+        $device = $this->route('device');
+
+        return $device instanceof Device
+            && $this->user() !== null
+            && $this->user()->can('update', $device);
+    }
+
+    /**
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    public function rules(): array
+    {
+        return [
+            'action' => ['required', 'string', 'in:on,off'],
+        ];
+    }
+}

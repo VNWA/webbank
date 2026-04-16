@@ -1,0 +1,56 @@
+@import 'vue3-easy-data-table/dist/style.css';
+
+/* Global table polish */
+.vue3-easy-data-table {
+    border-radius: 0.75rem;
+    overflow: hidden;
+    border: 1px solid hsl(240 6% 90%);
+}
+
+.vue3-easy-data-table__header th {
+    font-weight: 600;
+    letter-spacing: 0.01em;
+}
+
+.vue3-easy-data-table__body tr {
+    transition: background-color 0.15s ease;
+}
+
+.vue3-easy-data-table__body td {
+    vertical-align: middle;
+}
+
+.vue3-easy-data-table__footer {
+    border-top: 1px solid hsl(240 6% 88%);
+}
+
+/* Dark mode variables + contrast */
+.dark .vue3-easy-data-table {
+    --easy-table-border: 1px solid hsl(240 4% 22%);
+    --easy-table-row-border: 1px solid hsl(240 4% 24%);
+    --easy-table-header-font-color: hsl(0 0% 95%);
+    --easy-table-header-background-color: hsl(240 6% 13%);
+    --easy-table-body-row-font-color: hsl(0 0% 92%);
+    --easy-table-body-row-background-color: hsl(240 6% 10%);
+    --easy-table-body-even-row-background-color: hsl(240 6% 12%);
+    --easy-table-body-row-hover-background-color: hsl(240 5% 18%);
+    --easy-table-body-row-hover-font-color: hsl(0 0% 100%);
+    --easy-table-footer-background-color: hsl(240 6% 13%);
+    --easy-table-footer-font-color: hsl(0 0% 90%);
+    --easy-table-message-font-color: hsl(0 0% 86%);
+    --easy-table-loading-mask-background-color: hsl(240 6% 8%);
+    --easy-table-loading-mask-opacity: 0.65;
+    --easy-table-scrollbar-track-color: hsl(240 6% 10%);
+    --easy-table-scrollbar-color: hsl(240 6% 10%);
+    --easy-table-scrollbar-thumb-color: hsl(240 4% 30%);
+    --easy-table-scrollbar-corner-color: hsl(240 6% 10%);
+    --easy-table-buttons-pagination-border: 1px solid hsl(240 4% 30%);
+}
+
+.dark .vue3-easy-data-table__header th.sortable .sortType-icon {
+    border-bottom-color: hsl(0 0% 92%);
+}
+
+.dark .vue3-easy-data-table__rows-selector .rows-input__wrapper {
+    border-bottom-color: hsl(240 4% 60%);
+}
