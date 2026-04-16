@@ -64,7 +64,7 @@ class DuoPlusApi
     }
 
     /**
-     * Chạy lệnh ADB qua DuoPlus cloud phone command API.
+     * Chạy lệnh ADB qua DWIN cloud phone command API.
      *
      * @return array{ok: bool, message: string, data: array<string, mixed>}
      */
@@ -84,7 +84,7 @@ class DuoPlusApi
         if ($success === false) {
             return [
                 'ok' => false,
-                'message' => 'DuoPlus command trả về success=false.',
+                'message' => 'DWIN command trả về success=false.',
                 'data' => $result['data'],
             ];
         }
@@ -146,7 +146,7 @@ class DuoPlusApi
     }
 
     /**
-     * Map theo bảng trạng thái DuoPlus (0–12).
+     * Map theo bảng trạng thái DWIN (0–12).
      */
     public function mapCloudPhoneStatusCode(?int $code): string
     {
@@ -193,7 +193,7 @@ class DuoPlusApi
         if ($inFail) {
             return [
                 'ok' => false,
-                'message' => 'DuoPlus từ chối power cho image_id này (nằm trong danh sách fail).',
+                'message' => 'DWIN từ chối power cho image_id này (nằm trong danh sách fail).',
                 'data' => $payload,
             ];
         }

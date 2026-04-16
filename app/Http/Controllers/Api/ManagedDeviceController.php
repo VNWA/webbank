@@ -168,7 +168,7 @@ class ManagedDeviceController extends Controller
     }
 
     /**
-     * Bật/tắt máy trực tiếp qua DuoPlus (không queue) — tách khỏi luồng lệnh dài.
+     * Bật/tắt máy trực tiếp qua DWIN (không queue) — tách khỏi luồng lệnh dài.
      */
     public function power(StoreDevicePowerRequest $request, Device $device, DuoPlusApi $duoPlusApi): JsonResponse
     {
@@ -203,7 +203,7 @@ class ManagedDeviceController extends Controller
 
         if (! $result['ok']) {
             return response()->json([
-                'message' => $result['message'] !== '' ? $result['message'] : 'DuoPlus không chấp nhận thao tác power.',
+                'message' => $result['message'] !== '' ? $result['message'] : 'DWIN không chấp nhận thao tác power.',
             ], 422);
         }
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, Smartphone, Users } from 'lucide-vue-next';
+import { BookOpen, FolderGit2, History, LayoutGrid, Smartphone, Users } from 'lucide-vue-next';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -17,6 +17,7 @@ import {
 } from '@/components/ui/sidebar';
 import { dashboard } from '@/routes';
 import deviceManagement from '@/routes/device-management';
+import transferHistory from '@/routes/transfer-history';
 import userManagement from '@/routes/user-management';
 import type { NavItem } from '@/types';
 
@@ -43,6 +44,11 @@ const mainNavItems = computed<NavItem[]>(() => {
             title: 'Quản lý thiết bị',
             href: deviceManagement.index(),
             icon: Smartphone,
+        });
+        items.push({
+            title: 'Lịch sử chuyển tiền',
+            href: transferHistory.index(),
+            icon: History,
         });
     }
 

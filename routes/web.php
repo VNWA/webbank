@@ -1,9 +1,13 @@
 <?php
 
-use App\Http\Controllers\Api\ManagedDeviceController;
+use App\Http\Controllers\Api\DashboardStatsController;
 use App\Http\Controllers\Api\DeviceOperationController;
+use App\Http\Controllers\Api\ManagedDeviceController;
 use App\Http\Controllers\Api\ManagedUserController;
+use App\Http\Controllers\Api\TransferHistoryController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceManagementController;
+use App\Http\Controllers\TransferHistoryManagementController;
 use App\Http\Controllers\UserManagementController;
 use App\Models\Device;
 use App\Models\User;
@@ -14,7 +18,7 @@ Route::inertia('/', 'Welcome', [
 ])->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::inertia('dashboard', 'Dashboard')->name('dashboard');
+    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('user-management', [UserManagementController::class, 'index'])
         ->name('user-management.index')
@@ -32,6 +36,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('device-management.transfer')
         ->can('update', 'device');
 
+    Route::get('transfer-history', [TransferHistoryManagementController::class, 'index'])
+        ->name('transfer-history.index')
+        ->can('viewAny', Device::class);
+
     Route::prefix('api')->group(function () {
         Route::get('managed-users', [ManagedUserController::class, 'index'])
             ->name('api.managed-users.index')
@@ -45,6 +53,13 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::delete('managed-users/{user}', [ManagedUserController::class, 'destroy'])
             ->name('api.managed-users.destroy')
             ->can('delete', 'user');
+
+        Route::get('dashboard/stats', DashboardStatsController::class)
+            ->name('api.dashboard.stats')
+            ->can('viewAny', Device::class);
+        Route::get('transfer-histories', [TransferHistoryController::class, 'index'])
+            ->name('api.transfer-histories.index')
+            ->can('viewAny', Device::class);
 
         Route::get('managed-devices', [ManagedDeviceController::class, 'index'])
             ->name('api.managed-devices.index')

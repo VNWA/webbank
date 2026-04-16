@@ -42,7 +42,7 @@ class Device extends Model
     }
 
     /**
-     * Mỗi lần serialize / đọc thuộc tính sẽ gọi DuoPlus Cloud Phone Status (không lưu DB).
+     * Mỗi lần serialize / đọc thuộc tính sẽ gọi DWIN Cloud Phone Status (không lưu DB).
      *
      * @see https://help.duoplus.net/docs/cloud-phone-status
      */
@@ -60,8 +60,13 @@ class Device extends Model
         return $this->hasMany(DeviceOperation::class)->latest('id');
     }
 
+    public function transferHistories(): HasMany
+    {
+        return $this->hasMany(TransferHistory::class)->latest('id');
+    }
+
     /**
-     * Nhãn trạng thái nguồn từ DuoPlus (`on`, `off`, `unknown`, …).
+     * Nhãn trạng thái nguồn từ DWIN (`on`, `off`, `unknown`, …).
      */
     protected function deviceStatus(): Attribute
     {

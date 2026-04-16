@@ -6,6 +6,7 @@ use App\Events\DeviceOperationUpdated;
 use App\Models\Device;
 use App\Models\DeviceOperation;
 use App\Models\DeviceOperationLog;
+use App\Models\TransferHistory;
 use App\Services\DuoPlusApi;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Filesystem\FilesystemAdapter;
@@ -65,6 +66,9 @@ class ProcessDeviceOperation implements ShouldQueue
                 'result_message' => $result['message'],
                 'finished_at' => now(),
             ]);
+            if ($result['ok'] && in_array($operation->operation_type, ['pg_transfer', 'baca_transfer'], true)) {
+                $this->recordSuccessfulTransfer($operation);
+            }
             $this->broadcast($operation);
         } catch (Throwable $exception) {
             $this->log($operation, 'exception', $exception->getMessage(), 'error', [
@@ -868,8 +872,44 @@ class ProcessDeviceOperation implements ShouldQueue
         return $baseMessage.' Chưa gửi được ảnh biên lai Telegram (xem log receipt_capture).';
     }
 
+    private function recordSuccessfulTransfer(DeviceOperation $operation): void
+    {
+        try {
+            $payload = is_array($operation->operation_payload) ? $operation->operation_payload : [];
+            $bankName = (string) ($payload['bank_name'] ?? '');
+            $account = (string) ($payload['account_number'] ?? $payload['account'] ?? '');
+            $recipientName = (string) ($payload['recipient_name'] ?? '');
+            $note = (string) ($payload['content'] ?? '');
+            $amount = (int) ($payload['amount'] ?? 0);
+            $channel = $operation->operation_type === 'pg_transfer' ? 'pg' : 'baca';
+
+            if ($account === '' || $amount <= 0) {
+                return;
+            }
+
+            TransferHistory::query()->firstOrCreate(
+                ['device_operation_id' => $operation->id],
+                [
+                    'device_id' => $operation->device_id,
+                    'channel' => $channel,
+                    'bank_name' => $bankName !== '' ? $bankName : null,
+                    'account_number' => $account,
+                    'recipient_name' => $recipientName !== '' ? $recipientName : null,
+                    'amount' => $amount,
+                    'transfer_note' => $note !== '' ? $note : null,
+                    'requested_by' => $operation->requested_by,
+                ],
+            );
+        } catch (Throwable $e) {
+            Log::warning('Không lưu được lịch sử chuyển tiền.', [
+                'operation_id' => $operation->id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
     /**
-     * Chuỗi stdout từ DuoPlus command API (cat / base64 / …) — cùng các tầng lồng nhau như dump UI.
+     * Chuỗi stdout từ DWIN command API (cat / base64 / …) — cùng các tầng lồng nhau như dump UI.
      *
      * @param  array<string, mixed>  $jsonRoot  Toàn bộ JSON phản hồi (giống $result['data'] từ DuoPlusApi::post).
      */
@@ -907,7 +947,7 @@ class ProcessDeviceOperation implements ShouldQueue
                         $command,
                     );
                     if (! $result['ok']) {
-                        $lastFailReason = $result['message'] !== '' ? $result['message'] : 'DuoPlus command lỗi.';
+                        $lastFailReason = $result['message'] !== '' ? $result['message'] : 'DWIN command lỗi.';
                         if ($attempts < 3 && $this->isTransientCommandTimeout($lastFailReason)) {
                             usleep(400_000);
 
@@ -1319,7 +1359,7 @@ class ProcessDeviceOperation implements ShouldQueue
         } while ($attempts < 3);
 
         if (! $result['ok']) {
-            $message = $result['message'] !== '' ? $result['message'] : 'DuoPlus command lỗi.';
+            $message = $result['message'] !== '' ? $result['message'] : 'DWIN command lỗi.';
             $this->log($operation, $stage, $message, 'error', ['command' => $command]);
 
             throw new \RuntimeException($message);
