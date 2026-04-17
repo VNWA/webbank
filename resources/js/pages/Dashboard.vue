@@ -5,7 +5,6 @@ import { ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AppButton from '@/components/AppButton.vue';
-import http from '@/lib/axios';
 import { dashboard } from '@/routes';
 
 export type DashboardStats = {
@@ -42,41 +41,18 @@ function formatMoney(raw: string): string {
     return n.toLocaleString('vi-VN') + ' VND';
 }
 
-async function refreshStats(): Promise<void> {
-    if (stats.value === null && props.stats === null) {
-        return;
-    }
-    loadingStats.value = true;
-    try {
-        const { data } = await http.get<{ data: DashboardStats }>('/api/dashboard/stats');
-        stats.value = data.data;
-        toast.success('Đã cập nhật số liệu.');
-    } catch {
-        toast.error('Không tải được thống kê.');
-    } finally {
-        loadingStats.value = false;
-    }
-}
+
 
 </script>
 
 <template>
+
     <Head title="Dashboard" />
 
     <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-lg font-semibold text-foreground">Tổng quan</h1>
-            <AppButton
-                v-if="stats !== null"
-                type="button"
-                variant="outline"
-                size="sm"
-                :disabled="loadingStats"
-                @click="refreshStats"
-            >
-                <RefreshCw class="mr-1 size-4" :class="{ 'animate-spin': loadingStats }" />
-                Làm mới số liệu
-            </AppButton>
+
         </div>
 
         <p v-if="stats === null" class="text-sm text-muted-foreground">
@@ -113,10 +89,8 @@ async function refreshStats(): Promise<void> {
                 </CardHeader>
                 <CardContent>
                     <div class="text-2xl font-bold">{{ formatInt(stats.transfers_total_count) }}</div>
-                    <CardDescription
-                        >PG: {{ formatInt(stats.transfers_pg_count) }} · Bắc Á:
-                        {{ formatInt(stats.transfers_baca_count) }}</CardDescription
-                    >
+                    <CardDescription>PG: {{ formatInt(stats.transfers_pg_count) }} · Bắc Á:
+                        {{ formatInt(stats.transfers_baca_count) }}</CardDescription>
                 </CardContent>
             </Card>
 
@@ -127,10 +101,8 @@ async function refreshStats(): Promise<void> {
                 </CardHeader>
                 <CardContent>
                     <div class="text-xl font-bold leading-snug">{{ formatMoney(stats.transfers_volume_total) }}</div>
-                    <CardDescription
-                        >Hôm nay: {{ formatInt(stats.transfers_today_count) }} · Tháng này:
-                        {{ formatInt(stats.transfers_month_count) }}</CardDescription
-                    >
+                    <CardDescription>Hôm nay: {{ formatInt(stats.transfers_today_count) }} · Tháng này:
+                        {{ formatInt(stats.transfers_month_count) }}</CardDescription>
                 </CardContent>
             </Card>
         </div>
@@ -138,9 +110,8 @@ async function refreshStats(): Promise<void> {
         <Card v-if="stats !== null" class="border-dashed">
             <CardHeader>
                 <CardTitle class="text-base">Gợi ý</CardTitle>
-                <CardDescription
-                    >Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.</CardDescription
-                >
+                <CardDescription>Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.
+                </CardDescription>
             </CardHeader>
         </Card>
     </div>
