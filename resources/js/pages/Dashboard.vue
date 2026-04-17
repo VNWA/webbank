@@ -81,7 +81,7 @@ function refreshStats(): void {
         </p>
 
         <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <!-- <Card>
+            <Card>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Người dùng</CardTitle>
                     <Users class="size-4 text-muted-foreground" />
@@ -91,7 +91,7 @@ function refreshStats(): void {
                     <CardDescription>Tổng tài khoản trong hệ thống</CardDescription>
                 </CardContent>
             </Card>
-
+            <!--
             <Card>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Thiết bị</CardTitle>
