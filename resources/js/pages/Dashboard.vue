@@ -87,7 +87,7 @@ function refreshStats(): void {
                     <Users class="size-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div class="text-2xl font-bold">{{ stats.users_count }}</div>
+                    <div class="text-2xl font-bold" v-if="stats !== null">{{ stats.users_count }}</div>
                     <CardDescription>Tổng tài khoản trong hệ thống</CardDescription>
                 </CardContent>
             </Card>
