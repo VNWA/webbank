@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
-import { RefreshCw } from 'lucide-vue-next';
 import { watchDebounced } from '@vueuse/core';
+import axios from 'axios';
+import { RefreshCw } from 'lucide-vue-next';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import Vue3EasyDataTable from 'vue3-easy-data-table';
@@ -11,7 +12,6 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import echo from '@/echo';
-import http from '@/lib/axios';
 import { dashboard } from '@/routes';
 import managedDevices from '@/routes/api/managed-devices';
 import deviceManagement from '@/routes/device-management';
@@ -275,7 +275,7 @@ async function hydrateDeviceStatusesFromServer(): Promise<void> {
     }
 
     try {
-        const { data } = await http.post<{ statuses: Record<string, string> }>('/api/managed-devices/status-batch', {
+        const { data } = await axios.post<{ statuses: Record<string, string> }>('/api/managed-devices/status-batch', {
             ids,
         });
         const statuses = data.statuses ?? {};
@@ -299,7 +299,7 @@ async function loadDevices(options?: { silent?: boolean }): Promise<void> {
     }
 
     try {
-        const { data } = await http.get(managedDevices.index.url(), {
+        const { data } = await axios.get(managedDevices.index.url(), {
             params: {
                 page: serverOptions.value.page,
                 per_page: serverOptions.value.rowsPerPage,
@@ -363,7 +363,7 @@ async function saveDeviceNote(): Promise<void> {
     savingNote.value = true;
 
     try {
-        const { data } = await http.patch<{ data: Record<string, unknown> }>(
+        const { data } = await axios.patch<{ data: Record<string, unknown> }>(
             `/api/managed-devices/${noteDeviceId.value}/note`,
             { note: noteDraft.value },
         );
@@ -444,7 +444,7 @@ async function loadOperationFeed(silent = false, options?: { force?: boolean }):
     loadingOperations.value = true;
 
     try {
-        const { data } = await http.get(managedDevices.operations.feed.url());
+        const { data } = await axios.get(managedDevices.operations.feed.url());
         const payload = (data.operations ?? {}) as Record<string, DeviceOperation[]>;
         const next: Record<number, DeviceOperation[]> = {};
 
@@ -485,7 +485,7 @@ async function deleteOne(row: Device): Promise<void> {
     }
 
     try {
-        await http.delete(managedDevices.destroy.url({ device: row.id }));
+        await axios.delete(managedDevices.destroy.url({ device: row.id }));
         toast.success('Đã xóa device.');
         await loadDevices();
     } catch {
@@ -501,7 +501,7 @@ async function setPower(device: Device, action: 'on' | 'off'): Promise<void> {
     }
 
     try {
-        const { data } = await http.post(managedDevices.power.url({ device: device.id }), { action });
+        const { data } = await axios.post(managedDevices.power.url({ device: device.id }), { action });
         toast.success(typeof data.message === 'string' ? data.message : 'Đã cập nhật nguồn.');
         const payload = data.data as Record<string, unknown> | undefined;
         if (payload && typeof payload === 'object' && payload.id !== undefined) {
@@ -523,7 +523,7 @@ async function runCheckLogin(device: Device, operationType: 'pg_check_login' | '
     }
 
     try {
-        const { data } = await http.post(managedDevices.operations.store.url({ device: device.id }), {
+        const { data } = await axios.post(managedDevices.operations.store.url({ device: device.id }), {
             operation_type: operationType,
         });
         toast.success(typeof data.message === 'string' ? data.message : 'Đã gửi lệnh.');
@@ -548,7 +548,7 @@ async function runOperation(
     }
 
     try {
-        const { data } = await http.post(managedDevices.operations.store.url({ device: device.id }), {
+        const { data } = await axios.post(managedDevices.operations.store.url({ device: device.id }), {
             operation_type: operationType,
         });
         toast.success(typeof data.message === 'string' ? data.message : 'Đã gửi lệnh.');
@@ -576,7 +576,7 @@ async function deleteSelected(): Promise<void> {
     }
 
     try {
-        await http.delete(managedDevices.bulkDestroy.url(), { data: { ids: selectedIds.value } });
+        await axios.delete(managedDevices.bulkDestroy.url(), { data: { ids: selectedIds.value } });
         selectedItems.value = [];
         toast.success('Đã xóa các device đã chọn.');
         await loadDevices();

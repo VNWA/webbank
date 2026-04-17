@@ -1,3 +1,5 @@
+import './bootstrap';
+
 import { createInertiaApp } from '@inertiajs/vue3';
 import { initializeTheme } from '@/composables/useAppearance';
 import '@/echo';

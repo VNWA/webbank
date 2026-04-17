@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
 import { watchDebounced } from '@vueuse/core';
+import axios from 'axios';
 import { computed, onMounted, ref } from 'vue';
 import { toast } from 'vue-sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,7 +9,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import http from '@/lib/axios';
 import { dashboard } from '@/routes';
 import deviceManagement from '@/routes/device-management';
 
@@ -154,7 +154,7 @@ async function loadBanks(): Promise<void> {
     if (loadingBanks.value) return;
     loadingBanks.value = true;
     try {
-        const { data } = await http.get('/api/managed-devices/banklookup/banks');
+        const { data } = await axios.get('/api/managed-devices/banklookup/banks');
         const banks = (data?.data?.banks ?? []) as BankOption[];
         bankOptions.value = Array.isArray(banks) ? banks : [];
     } catch (e) {
@@ -170,7 +170,7 @@ async function verifyAndContinue(): Promise<void> {
     verifyingRecipient.value = true;
     recipientName.value = '';
     try {
-        const { data } = await http.post('/api/managed-devices/banklookup/account-name', {
+        const { data } = await axios.post('/api/managed-devices/banklookup/account-name', {
             bank: bankCode.value,
             account: accountNumber.value,
         });
@@ -282,7 +282,7 @@ async function submitTransfer(): Promise<void> {
     try {
         const operation_type = channel.value === 'pg' ? 'pg_transfer' : 'baca_transfer';
         const normalizedContent = normalizeTransferContent(contentInput.value);
-        await http.post(`/api/managed-devices/${props.device.id}/operations`, {
+        await axios.post(`/api/managed-devices/${props.device.id}/operations`, {
             operation_type,
             operation_payload: {
                 channel: channel.value,

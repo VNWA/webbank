@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
-import { isAxiosError } from 'axios';
+import axios, { isAxiosError } from 'axios';
 import { ref } from 'vue';
 import { toast } from 'vue-sonner';
 import DuoPlusMp4Select from '@/components/DuoPlusMp4Select.vue';
@@ -8,7 +8,6 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import http from '@/lib/axios';
 import { dashboard } from '@/routes';
 import managedDevices from '@/routes/api/managed-devices';
 import deviceManagement from '@/routes/device-management';
@@ -61,7 +60,7 @@ async function fetchInfo(): Promise<void> {
     loadingInfo.value = true;
 
     try {
-        const { data } = await http.post(managedDevices.duoplusInfo.url(), {
+        const { data } = await axios.post(managedDevices.duoplusInfo.url(), {
             duo_api_key: form.value.duo_api_key,
             image_id: form.value.image_id,
         });
@@ -100,7 +99,7 @@ async function submit(): Promise<void> {
     formErrors.value = {};
 
     try {
-        await http.post(managedDevices.store.url(), form.value);
+        await axios.post(managedDevices.store.url(), form.value);
         toast.success('Đã tạo device.');
         router.visit(deviceManagement.index());
     } catch (e) {

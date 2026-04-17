@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import axios from 'axios';
 import { Bell } from 'lucide-vue-next';
-import echo from '@/echo';
-import http from '@/lib/axios';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
     DropdownMenu,
@@ -12,6 +11,7 @@ import {
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import echo from '@/echo';
 
 type OperationStatus = 'queued' | 'running' | 'success' | 'failed';
 type DeviceOperationLog = { id: number; stage: string; message: string; level: string; created_at: string | null };
@@ -65,7 +65,7 @@ async function loadFeed(silent = false): Promise<void> {
     if (loading.value) return;
     loading.value = true;
     try {
-        const { data } = await http.get('/api/managed-device-operations/feed');
+        const { data } = await axios.get('/api/managed-device-operations/feed');
         const grouped = (data?.operations ?? {}) as Record<string, DeviceOperation[]>;
         const flat: DeviceOperation[] = [];
         for (const items of Object.values(grouped)) {

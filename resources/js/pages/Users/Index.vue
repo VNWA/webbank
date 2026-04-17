@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Head, usePage } from '@inertiajs/vue3';
 import { watchDebounced } from '@vueuse/core';
-import { isAxiosError } from 'axios';
+import axios, { isAxiosError } from 'axios';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import Vue3EasyDataTable from 'vue3-easy-data-table';
@@ -24,7 +24,6 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import http from '@/lib/axios';
 import { dashboard } from '@/routes';
 import managedUsers from '@/routes/api/managed-users';
 import userManagement from '@/routes/user-management';
@@ -150,7 +149,7 @@ async function loadUsers(): Promise<void> {
     loading.value = true;
 
     try {
-        const { data } = await http.get(managedUsers.index.url(), {
+        const { data } = await axios.get(managedUsers.index.url(), {
             params: {
                 page: serverOptions.value.page,
                 per_page: serverOptions.value.rowsPerPage,
@@ -230,7 +229,7 @@ async function submitForm(): Promise<void> {
 
     try {
         if (editingId.value === null) {
-            await http.post(managedUsers.store.url(), {
+            await axios.post(managedUsers.store.url(), {
                 name: form.value.name,
                 email: form.value.email,
                 password: form.value.password,
@@ -250,7 +249,7 @@ async function submitForm(): Promise<void> {
                 body.password_confirmation = form.value.password_confirmation;
             }
 
-            await http.put(
+            await axios.put(
                 managedUsers.update.url({ user: editingId.value }),
                 body,
             );
@@ -288,7 +287,7 @@ async function confirmDelete(row: ManagedUser): Promise<void> {
     }
 
     try {
-        await http.delete(managedUsers.destroy.url({ user: row.id }));
+        await axios.delete(managedUsers.destroy.url({ user: row.id }));
         toast.success('Đã xóa người dùng.');
         await loadUsers();
     } catch (e) {

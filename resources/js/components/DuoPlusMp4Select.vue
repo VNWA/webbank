@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import axios from 'axios';
 import { computed, ref, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import http from '@/lib/axios';
 import managedDevices from '@/routes/api/managed-devices';
 
 type FileOption = { id: string; name: string; original_file_name?: string };
@@ -35,7 +35,7 @@ async function loadPage(page: number, append: boolean): Promise<void> {
     loading.value = true;
 
     try {
-        const { data } = await http.post(managedDevices.duoplusFiles.url(), {
+        const { data } = await axios.post(managedDevices.duoplusFiles.url(), {
             duo_api_key: props.duoApiKey,
             keyword: keyword.value.trim(),
             page,

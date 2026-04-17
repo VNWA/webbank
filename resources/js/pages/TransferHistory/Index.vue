@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
 import { watchDebounced } from '@vueuse/core';
+import axios from 'axios';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import Vue3EasyDataTable from 'vue3-easy-data-table';
@@ -8,7 +9,6 @@ import AppButton from '@/components/AppButton.vue';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import http from '@/lib/axios';
 import { dashboard } from '@/routes';
 import transferHistory from '@/routes/transfer-history';
 
@@ -96,7 +96,7 @@ function formatDt(raw: string | null | undefined): string {
 async function loadRows(): Promise<void> {
     loading.value = true;
     try {
-        const { data } = await http.get('/api/transfer-histories', {
+        const { data } = await axios.get('/api/transfer-histories', {
             params: {
                 page: serverOptions.value.page,
                 per_page: serverOptions.value.rowsPerPage,
