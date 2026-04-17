@@ -76,23 +76,22 @@ function refreshStats(): void {
             </AppButton>
         </div>
 
-        <!-- <p v-if="stats === null" class="text-sm text-muted-foreground">
+        <p v-if="stats === null" class="text-sm text-muted-foreground">
             Bạn không có quyền xem thống kê hệ thống. Liên hệ quản trị viên nếu cần.
-        </p> -->
+        </p>
 
-        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card>
-                <!--   <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Người dùng</CardTitle>
                     <Users class="size-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div class="text-2xl font-bold">10</div>
+                    <div class="text-2xl font-bold">{{ formatInt(stats.users_count) }}</div>
                     <CardDescription>Tổng tài khoản trong hệ thống</CardDescription>
                 </CardContent>
-                -->
             </Card>
-            <!--
+
             <Card>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Thiết bị</CardTitle>
@@ -126,15 +125,15 @@ function refreshStats(): void {
                     <CardDescription>Hôm nay: {{ formatInt(stats.transfers_today_count) }} · Tháng này:
                         {{ formatInt(stats.transfers_month_count) }}</CardDescription>
                 </CardContent>
-            </Card> -->
+            </Card>
         </div>
 
-        <!--     <Card v-if="stats !== null" class="border-dashed">
+        <Card v-if="stats !== null" class="border-dashed">
             <CardHeader>
                 <CardTitle class="text-base">Gợi ý</CardTitle>
                 <CardDescription>Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.
                 </CardDescription>
             </CardHeader>
-        </Card> -->
+        </Card>
     </div>
 </template>
