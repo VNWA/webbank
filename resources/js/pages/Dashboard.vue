@@ -49,36 +49,31 @@ function refreshStats(): void {
 
     loadingStats.value = true;
 
-    router.reload({
-        only: ['stats'],
-        onSuccess: () => {
-            toast.success('Đã cập nhật số liệu.');
-        },
-        onError: () => {
-            toast.error('Không tải được thống kê.');
-        },
-        onFinish: () => {
-            loadingStats.value = false;
-        },
-    });
+    // router.reload({
+    //     only: ['stats'],
+    //     onSuccess: () => {
+    //         toast.success('Đã cập nhật số liệu.');
+    //     },
+    //     onError: () => {
+    //         toast.error('Không tải được thống kê.');
+    //     },
+    //     onFinish: () => {
+    //         loadingStats.value = false;
+    //     },
+    // });
 }
 
 </script>
 
 <template>
+
     <Head title="Dashboard" />
 
     <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-lg font-semibold text-foreground">Tổng quan</h1>
-            <AppButton
-                v-if="stats !== null"
-                type="button"
-                variant="outline"
-                size="sm"
-                :disabled="loadingStats"
-                @click="refreshStats"
-            >
+            <AppButton v-if="stats !== null" type="button" variant="outline" size="sm" :disabled="loadingStats"
+                @click="refreshStats">
                 <RefreshCw class="mr-1 size-4" :class="{ 'animate-spin': loadingStats }" />
                 Làm mới số liệu
             </AppButton>
@@ -118,10 +113,8 @@ function refreshStats(): void {
                 </CardHeader>
                 <CardContent>
                     <div class="text-2xl font-bold">{{ formatInt(stats.transfers_total_count) }}</div>
-                    <CardDescription
-                        >PG: {{ formatInt(stats.transfers_pg_count) }} · Bắc Á:
-                        {{ formatInt(stats.transfers_baca_count) }}</CardDescription
-                    >
+                    <CardDescription>PG: {{ formatInt(stats.transfers_pg_count) }} · Bắc Á:
+                        {{ formatInt(stats.transfers_baca_count) }}</CardDescription>
                 </CardContent>
             </Card>
 
@@ -132,10 +125,8 @@ function refreshStats(): void {
                 </CardHeader>
                 <CardContent>
                     <div class="text-xl font-bold leading-snug">{{ formatMoney(stats.transfers_volume_total) }}</div>
-                    <CardDescription
-                        >Hôm nay: {{ formatInt(stats.transfers_today_count) }} · Tháng này:
-                        {{ formatInt(stats.transfers_month_count) }}</CardDescription
-                    >
+                    <CardDescription>Hôm nay: {{ formatInt(stats.transfers_today_count) }} · Tháng này:
+                        {{ formatInt(stats.transfers_month_count) }}</CardDescription>
                 </CardContent>
             </Card>
         </div>
@@ -143,9 +134,8 @@ function refreshStats(): void {
         <Card v-if="stats !== null" class="border-dashed">
             <CardHeader>
                 <CardTitle class="text-base">Gợi ý</CardTitle>
-                <CardDescription
-                    >Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.</CardDescription
-                >
+                <CardDescription>Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.
+                </CardDescription>
             </CardHeader>
         </Card>
     </div>
