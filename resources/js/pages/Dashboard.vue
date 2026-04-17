@@ -71,7 +71,7 @@ function refreshStats(): void {
     <div>
         ádgasdg
     </div>
-    <!--
+
     <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-lg font-semibold text-foreground">Tổng quan</h1>
@@ -82,7 +82,7 @@ function refreshStats(): void {
             </AppButton>
         </div>
 
-        <p v-if="stats === null" class="text-sm text-muted-foreground">
+        <!-- <p v-if="stats === null" class="text-sm text-muted-foreground">
             Bạn không có quyền xem thống kê hệ thống. Liên hệ quản trị viên nếu cần.
         </p>
 
@@ -140,6 +140,6 @@ function refreshStats(): void {
                 <CardDescription>Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.
                 </CardDescription>
             </CardHeader>
-        </Card>
-    </div> -->
+        </Card> -->
+    </div>
 </template>
