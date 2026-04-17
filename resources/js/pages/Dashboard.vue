@@ -6,6 +6,7 @@ import { toast } from 'vue-sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AppButton from '@/components/AppButton.vue';
 import { dashboard } from '@/routes';
+import { formatInt, formatMoney } from '@/lib/utils';
 
 export type DashboardStats = {
     users_count: number;
@@ -32,15 +33,8 @@ defineOptions({
     },
 });
 
-function formatInt(n: number): string {
-    return n.toLocaleString('vi-VN');
-}
 
-function formatMoney(raw: string): string {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return raw;
-    return n.toLocaleString('vi-VN') + ' VND';
-}
+
 
 function refreshStats(): void {
     if (props.stats === null) {
