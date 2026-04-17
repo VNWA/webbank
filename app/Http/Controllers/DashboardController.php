@@ -10,12 +10,12 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, DashboardStatsService $dashboardStatsService): Response
     {
         $stats = null;
-        // if ($request->user()?->can('viewAny', Device::class)) {
-        //     $stats = $dashboardStatsService->build();
-        // }
+        if ($request->user()?->can('viewAny', Device::class)) {
+            $stats = $dashboardStatsService->build();
+        }
 
         return Inertia::render('Dashboard', [
             'stats' => $stats,

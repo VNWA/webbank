@@ -49,18 +49,18 @@ function refreshStats(): void {
 
     loadingStats.value = true;
 
-    // router.reload({
-    //     only: ['stats'],
-    //     onSuccess: () => {
-    //         toast.success('Đã cập nhật số liệu.');
-    //     },
-    //     onError: () => {
-    //         toast.error('Không tải được thống kê.');
-    //     },
-    //     onFinish: () => {
-    //         loadingStats.value = false;
-    //     },
-    // });
+    router.reload({
+        only: ['stats'],
+        onSuccess: () => {
+            toast.success('Đã cập nhật số liệu.');
+        },
+        onError: () => {
+            toast.error('Không tải được thống kê.');
+        },
+        onFinish: () => {
+            loadingStats.value = false;
+        },
+    });
 }
 
 </script>
@@ -72,11 +72,11 @@ function refreshStats(): void {
     <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-lg font-semibold text-foreground">Tổng quan</h1>
-            <!-- <AppButton v-if="stats !== null" type="button" variant="outline" size="sm" :disabled="loadingStats"
+            <AppButton v-if="stats !== null" type="button" variant="outline" size="sm" :disabled="loadingStats"
                 @click="refreshStats">
                 <RefreshCw class="mr-1 size-4" :class="{ 'animate-spin': loadingStats }" />
                 Làm mới số liệu
-            </AppButton> -->
+            </AppButton>
         </div>
 
         <p v-if="stats === null" class="text-sm text-muted-foreground">
