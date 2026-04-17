@@ -16,6 +16,15 @@ class HandleInertiaRequests extends Middleware
      */
     protected $rootView = 'app';
 
+    public function __construct()
+    {
+        $configured = config('inertia.ssr.exclude_paths', []);
+
+        if (is_array($configured) && $configured !== []) {
+            $this->withoutSsr = $configured;
+        }
+    }
+
     /**
      * Determines the current asset version.
      *

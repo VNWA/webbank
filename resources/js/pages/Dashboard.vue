@@ -82,7 +82,7 @@ function refreshStats(): void {
 
         <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card>
-                <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
+                <!--   <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Người dùng</CardTitle>
                     <Users class="size-4 text-muted-foreground" />
                 </CardHeader>
@@ -90,6 +90,7 @@ function refreshStats(): void {
                     <div class="text-2xl font-bold">10</div>
                     <CardDescription>Tổng tài khoản trong hệ thống</CardDescription>
                 </CardContent>
+                -->
             </Card>
             <!--
             <Card>

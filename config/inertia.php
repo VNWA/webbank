@@ -21,6 +21,16 @@ return [
         'url' => env('INERTIA_SSR_URL', 'http://127.0.0.1:13714'),
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
 
+        /**
+         * Các URI (path) không dùng SSR — cách so khớp giống route `is()`, vd. `dashboard`, `device-management/*`.
+         * Dùng khi một trang gây lỗi/timeout trên Node (502 phía Cloudflare) và cần tách lỗi SSR.
+         *
+         * @var array<int, string>
+         */
+        'exclude_paths' => array_values(array_filter(array_map(
+            static fn (string $path): string => trim($path),
+            explode(',', (string) env('INERTIA_SSR_EXCLUDE_PATHS', ''))
+        ))),
     ],
 
     /*
