@@ -82,7 +82,7 @@ function refreshStats(): void {
             </AppButton>
         </div>
 
-        <!-- <p v-if="stats === null" class="text-sm text-muted-foreground">
+        <p v-if="stats === null" class="text-sm text-muted-foreground">
             Bạn không có quyền xem thống kê hệ thống. Liên hệ quản trị viên nếu cần.
         </p>
 
@@ -134,7 +134,7 @@ function refreshStats(): void {
             </Card>
         </div>
 
-        <Card v-if="stats !== null" class="border-dashed">
+        <!--     <Card v-if="stats !== null" class="border-dashed">
             <CardHeader>
                 <CardTitle class="text-base">Gợi ý</CardTitle>
                 <CardDescription>Xem chi tiết từng lần chuyển khoản thành công tại mục «Lịch sử chuyển tiền» trên menu.
