@@ -64,7 +64,8 @@ const accountNumberInput = ref('');
 const recipientName = ref('');
 const verifyingRecipient = ref(false);
 
-const amountInput = ref('');
+/** Chỉ chữ số (không lưu chuỗi đã format) — tránh ghép nhầm khi gõ/dán vào giữa ô đã có dấu chấm. */
+const amountDigits = ref('');
 const contentInput = ref('CHUYEN TIEN');
 const channel = ref<'pg' | 'baca'>('baca');
 const submitting = ref(false);
@@ -219,22 +220,25 @@ function backToStep1(): void {
     step.value = 1;
 }
 
-function normalizeCurrencyInput(raw: string): string {
-    const digits = raw.replace(/[^\d]/g, '');
+function formatVndFromDigits(digits: string): string {
     if (digits === '') return '';
     const value = Number(digits);
     if (!Number.isFinite(value)) return '';
     return value.toLocaleString('vi-VN');
 }
 
-watchDebounced(
-    amountInput,
-    (v) => {
-        const next = normalizeCurrencyInput(v);
-        if (next !== v) amountInput.value = next;
-    },
-    { debounce: 120 },
-);
+function onAmountModelUpdate(v: string | number): void {
+    amountDigits.value = String(v ?? '').replace(/\D/g, '');
+}
+
+/**
+ * Dán vào ô số tiền: chỉ lấy số từ clipboard và thay toàn bộ (không chèn vào giữa chuỗi đã format).
+ */
+function onAmountPaste(e: ClipboardEvent): void {
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    amountDigits.value = text.replace(/\D/g, '');
+}
 
 function normalizeTransferContent(raw: string): string {
     // Uppercase + remove accents
@@ -264,8 +268,7 @@ async function submitTransfer(): Promise<void> {
         toast.error(sameBankWarning.value);
         return;
     }
-    const digits = amountInput.value.replace(/[^\d]/g, '');
-    const amount = Number(digits);
+    const amount = Number(amountDigits.value);
     if (!Number.isFinite(amount) || amount <= 0) {
         toast.error('Số tiền không hợp lệ.');
         return;
@@ -434,7 +437,13 @@ onMounted(() => {
                         </div>
                         <div class="space-y-2">
                             <Label>Số tiền</Label>
-                            <Input v-model="amountInput" inputmode="numeric" placeholder="VD: 1.000.000" />
+                            <Input
+                                :model-value="formatVndFromDigits(amountDigits)"
+                                inputmode="numeric"
+                                placeholder="VD: 1.000.000"
+                                @update:model-value="onAmountModelUpdate"
+                                @paste="onAmountPaste"
+                            />
                         </div>
                         <div class="space-y-2">
                             <Label>Nội dung</Label>

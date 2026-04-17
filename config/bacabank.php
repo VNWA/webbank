@@ -27,12 +27,13 @@ return [
         'wait_face_scan' => 5.0,
         // Sau khi chờ quét mặt (livestream), thêm delay trước khi nhập OTP — app cần thời gian chuyển màn.
         'wait_after_face_scan_before_otp' => 1.0,
-        'wait_reveal_balance' => 2.0,
-        // Sau khi vào home, chờ UI ổn định rồi mới tap nút mở che số dư (bắt buộc với nhiều bản app).
-        'wait_before_reveal_balance' => 2.0,
+        // Sau khi tap mở che, chờ UI cập nhật số (giảm nhẹ nếu máy nhanh).
+        'wait_reveal_balance' => 1.8,
+        // Sau khi vào home, chờ UI ổn rồi mới tap nút mắt.
+        'wait_before_reveal_balance' => 1.5,
         // Giữa 2 tap lặp (double tap) trên cùng nút mắt.
-        'wait_between_reveal_double_tap' => 0.25,
-        // Giữa các lần thử lại (tap lần 1 lỗi → tap lần 2…).
+        'wait_between_reveal_double_tap' => 0.22,
+        // Giữa các lần thử lại (lần 1 lỗi → lần 2…).
         'wait_between_reveal_retries' => 0.9,
 
         // Load list bank/search results
@@ -64,10 +65,10 @@ return [
         'continue_step_2' => [512, 1815],
         'otp_focus' => [540, 1180],
         'confirm' => [590, 1761],
-        // Mở che số dư (nút mắt) — lần 1 dùng tọa độ chính; lần thử 3 dùng reveal_balance_alt nếu có.
-        'reveal_balance' => [954, 966],
-        // Tọa độ dự phòng (botBank: 956,967) khi lần 1–2 không lần được.
-        'reveal_balance_alt' => [956, 967],
+        // Mở che số dư (nút mắt). Calibrate ~961.7×999.7 → làm tròn 962×1000 (có thể ghi float trong config).
+        'reveal_balance' => [962, 1000],
+        // Lần thử 3: tọa độ cũ (fallback) nếu bản app lệch layout.
+        'reveal_balance_alt' => [954, 966],
     ],
 
     // Danh sách ngân hàng trong app Bắc Á (lấy từ botBank BACA_BANK_LIST).

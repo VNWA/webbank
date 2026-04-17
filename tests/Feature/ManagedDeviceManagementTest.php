@@ -7,6 +7,7 @@ use App\Models\Device;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\PermissionRegistrar;
@@ -28,7 +29,7 @@ class ManagedDeviceManagementTest extends TestCase
     }
 
     /**
-     * @param  callable(Request): (\Illuminate\Http\Client\Response|null)|null  $fallback
+     * @param  callable(Request): (Response|null)|null  $fallback
      */
     protected function fakeDuoPlusHttp(?int $statusCodeForStatusEndpoint = 2, ?callable $fallback = null): void
     {
@@ -74,6 +75,96 @@ class ManagedDeviceManagementTest extends TestCase
 
         $this->actingAs($actor)->get(route('device-management.index'))->assertForbidden();
         $this->actingAs($actor)->getJson(route('api.managed-devices.index'))->assertForbidden();
+        $this->actingAs($actor)
+            ->postJson(route('api.managed-devices.status-batch'), ['ids' => [1]])
+            ->assertForbidden();
+        $device = Device::factory()->create();
+        $this->actingAs($actor)
+            ->patchJson(route('api.managed-devices.note', $device), ['note' => 'x'])
+            ->assertForbidden();
+    }
+
+    public function test_admin_status_batch_returns_live_statuses_per_device(): void
+    {
+        Http::fake(function (Request $request) {
+            if (! str_contains($request->url(), 'cloudPhone/status')) {
+                return Http::response(['code' => 500, 'message' => 'unfaked'], 503);
+            }
+
+            $body = $request->data();
+            $ids = is_array($body['image_ids'] ?? null) ? $body['image_ids'] : [];
+            $list = [];
+            foreach ($ids as $id) {
+                $idStr = (string) $id;
+                $list[] = [
+                    'id' => $idStr,
+                    'status' => $idStr === 'img-a' ? 1 : 2,
+                ];
+            }
+
+            return Http::response([
+                'code' => 200,
+                'message' => 'Success',
+                'data' => [
+                    'list' => $list,
+                ],
+            ]);
+        });
+
+        $admin = User::factory()->create();
+        $admin->assignRole(ApplicationRole::Admin->value);
+
+        $deviceA = Device::factory()->create([
+            'user_id' => $admin->id,
+            'duo_api_key' => 'duo-key',
+            'image_id' => 'img-a',
+        ]);
+        $deviceB = Device::factory()->create([
+            'user_id' => $admin->id,
+            'duo_api_key' => 'duo-key',
+            'image_id' => 'img-b',
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('api.managed-devices.status-batch'), [
+                'ids' => [$deviceA->id, $deviceB->id],
+            ])
+            ->assertOk()
+            ->assertJsonPath('statuses.'.(string) $deviceA->id, 'on')
+            ->assertJsonPath('statuses.'.(string) $deviceB->id, 'off');
+
+        Http::assertSentCount(1);
+    }
+
+    public function test_admin_can_patch_device_note(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole(ApplicationRole::Admin->value);
+        $device = Device::factory()->create(['user_id' => $admin->id]);
+
+        $this->actingAs($admin)
+            ->patchJson(route('api.managed-devices.note', $device), ['note' => '  Ghi chú A  '])
+            ->assertOk()
+            ->assertJsonPath('data.note', 'Ghi chú A');
+
+        $this->assertSame('Ghi chú A', $device->fresh()->note);
+    }
+
+    public function test_admin_can_clear_device_note(): void
+    {
+        $admin = User::factory()->create();
+        $admin->assignRole(ApplicationRole::Admin->value);
+        $device = Device::factory()->create([
+            'user_id' => $admin->id,
+            'note' => 'Cũ',
+        ]);
+
+        $this->actingAs($admin)
+            ->patchJson(route('api.managed-devices.note', $device), ['note' => ''])
+            ->assertOk()
+            ->assertJsonPath('data.note', null);
+
+        $this->assertNull($device->fresh()->note);
     }
 
     public function test_admin_can_create_update_and_delete_device(): void

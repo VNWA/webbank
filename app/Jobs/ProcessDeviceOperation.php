@@ -8,6 +8,7 @@ use App\Models\DeviceOperation;
 use App\Models\DeviceOperationLog;
 use App\Models\TransferHistory;
 use App\Services\DuoPlusApi;
+use App\Support\BalanceFromUiDumpParser;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Queue\Queueable;
@@ -232,7 +233,7 @@ class ProcessDeviceOperation implements ShouldQueue
         for ($attempt = 1; $attempt <= 3; $attempt++) {
             $this->tapBacaRevealBalanceForAttempt($duoPlusApi, $device, $operation, $tapCfg, $timing, $attempt);
             $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
-            $balance = $this->parseBalanceFromDump($dump);
+            $balance = BalanceFromUiDumpParser::parse($dump);
             if ($balance !== null) {
                 break;
             }
@@ -304,7 +305,7 @@ class ProcessDeviceOperation implements ShouldQueue
 
         $this->sendAdb($duoPlusApi, $device, $operation, 'close_app', "am force-stop {$package}");
 
-        $balance = $this->parseBalanceFromDump($dump2);
+        $balance = BalanceFromUiDumpParser::parse($dump2);
         if ($balance === null) {
             $this->log($operation, 'balance_parse_failed', 'Không parse được số dư từ UI dump.', 'warning', [
                 'dump_preview' => str($dump2)->limit(500)->value(),
@@ -1209,7 +1210,8 @@ class ProcessDeviceOperation implements ShouldQueue
     }
 
     /**
-     * Tap nút mở che số dư (mắt) trên home Bắc Á. Mỗi lần thử dùng chiến lược khác (tap đơn / tap đôi / tọa độ alt).
+     * Tap nút mở che số dư (mắt) trên home Bắc Á.
+     * Lần 1: tap đơn tại điểm chính. Lần 2: double tap cùng điểm (một số bản app cần). Lần 3: tọa độ alt).
      *
      * @param  array<string, mixed>  $tapCfg
      * @param  array<string, mixed>  $timing
@@ -1224,11 +1226,11 @@ class ProcessDeviceOperation implements ShouldQueue
     ): void {
         $attempt = max(1, min(3, $attempt));
 
-        $primary = $this->normalizeTapPair($tapCfg['reveal_balance'] ?? null) ?? [954, 966];
+        $primary = $this->normalizeTapPair($tapCfg['reveal_balance'] ?? null) ?? [962, 1000];
         $alt = isset($tapCfg['reveal_balance_alt']) ? $this->normalizeTapPair($tapCfg['reveal_balance_alt']) : null;
 
         if ($attempt === 1) {
-            $w = (float) ($timing['wait_before_reveal_balance'] ?? 2.0);
+            $w = (float) ($timing['wait_before_reveal_balance'] ?? 1.5);
             if ($w > 0) {
                 $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_before_reveal_balance', $w);
             }
@@ -1241,7 +1243,7 @@ class ProcessDeviceOperation implements ShouldQueue
         $this->tap($duoPlusApi, $device, $operation, "reveal_balance_try{$attempt}", $xy);
 
         if ($attempt === 2) {
-            $this->pauseLocal((float) ($timing['wait_between_reveal_double_tap'] ?? 0.25));
+            $this->pauseLocal((float) ($timing['wait_between_reveal_double_tap'] ?? 0.22));
             $this->tap($duoPlusApi, $device, $operation, "reveal_balance_try{$attempt}_2", $xy);
         }
 
@@ -1250,7 +1252,7 @@ class ProcessDeviceOperation implements ShouldQueue
             $device,
             $operation,
             'wait_reveal_balance',
-            (float) ($timing['wait_reveal_balance'] ?? 2.0),
+            (float) ($timing['wait_reveal_balance'] ?? 1.8),
         );
     }
 
@@ -1263,78 +1265,10 @@ class ProcessDeviceOperation implements ShouldQueue
             return null;
         }
 
-        return [(int) $xy[0], (int) $xy[1]];
-    }
-
-    private function parseBalanceFromDump(string $dump): ?int
-    {
-        $text = mb_strtolower($dump);
-
-        $text = str_replace('*', '', $text);
-
-        // 1) Ưu tiên bắt số đứng gần từ khoá "số dư" / "so du".
-        if (preg_match('/(số\\s*dư|so\\s*du)[^0-9]{0,80}([0-9][0-9\\.,\\s]{0,30})/u', $text, $m)) {
-            $raw = $m[2] ?? '';
-            $num = preg_replace('/[^0-9]/', '', $raw) ?? '';
-            if ($num !== '' && ctype_digit($num)) {
-                return (int) $num;
-            }
-        }
-
-        // 2) Bắt tất cả amount có currency marker (VND/vnđ/₫/đ).
-        $candidates = [];
-        if (preg_match_all('/([0-9][0-9\\.,\\s]{3,30})\\s*(vnd|vnđ|đ|₫)/u', $text, $mm, PREG_SET_ORDER)) {
-            foreach ($mm as $m) {
-                $raw = $m[1] ?? '';
-                $num = preg_replace('/[^0-9]/', '', $raw) ?? '';
-                if ($num !== '' && ctype_digit($num)) {
-                    $candidates[] = (int) $num;
-                }
-            }
-        }
-
-        if (! empty($candidates)) {
-            return max($candidates);
-        }
-
-        // 3) Nếu không có marker tiền rõ, thử tìm quanh “tài khoản thanh toán”.
-        $anchor = 'tài khoản thanh toán';
-        $pos = mb_strpos($text, $anchor);
-        if ($pos !== false) {
-            $window = mb_substr($text, (int) $pos, 900);
-            if (preg_match_all('/([0-9][0-9\\.,\\s]{3,30})\\s*(vnd|vnđ|đ|₫)/u', $window, $mm2, PREG_SET_ORDER)) {
-                $best = null;
-                foreach ($mm2 as $m) {
-                    $raw = $m[1] ?? '';
-                    $num = preg_replace('/[^0-9]/', '', $raw) ?? '';
-                    if ($num === '' || ! ctype_digit($num)) {
-                        continue;
-                    }
-                    $val = (int) $num;
-                    $best = $best === null ? $val : max($best, $val);
-                }
-                if ($best !== null) {
-                    return $best;
-                }
-            }
-        }
-
-        // Fallback: tìm số lớn nhất có vẻ giống tiền.
-        if (preg_match_all('/[0-9][0-9\\.,\\s]{4,20}/u', $text, $matches) && ! empty($matches[0])) {
-            $best = null;
-            foreach ($matches[0] as $candidate) {
-                $num = preg_replace('/[^0-9]/', '', $candidate) ?? '';
-                if ($num === '' || ! ctype_digit($num)) {
-                    continue;
-                }
-                $value = (int) $num;
-                $best = $best === null ? $value : max($best, $value);
-            }
-
-            return $best;
-        }
-
-        return null;
+        return [
+            (int) round((float) $xy[0]),
+            (int) round((float) $xy[1]),
+        ];
     }
 
     private function sendAdb(

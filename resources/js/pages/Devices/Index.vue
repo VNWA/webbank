@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { Head, Link } from '@inertiajs/vue3';
+import { RefreshCw } from 'lucide-vue-next';
 import { watchDebounced } from '@vueuse/core';
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import Vue3EasyDataTable from 'vue3-easy-data-table';
 import AppButton from '@/components/AppButton.vue';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import echo from '@/echo';
@@ -25,7 +27,7 @@ type Device = {
     status: string;
     duo_api_key: string;
     image_id: string;
-    device_status: string;
+    device_status: string | null;
     name: string;
     pg_pass: string;
     pg_pin: string;
@@ -37,6 +39,7 @@ type Device = {
     baca_balance: string | null;
     pg_balance_updated_at: string | null;
     baca_balance_updated_at: string | null;
+    note: string | null;
 };
 type DeviceOperationLog = {
     id: number;
@@ -80,6 +83,7 @@ const headers: TableHeader[] = [
     { text: 'Tên thiết bị', value: 'name', sortable: true },
     { text: 'PG Số dư', value: 'pg_balance' },
     { text: 'Bắc Á Số dư', value: 'baca_balance' },
+    { text: 'Ghi chú', value: 'note', width: 180 },
     { text: '', value: 'actions' },
 ];
 
@@ -97,6 +101,24 @@ function formatUpdatedAt(raw: string | null | undefined): string {
     return d.toLocaleString('vi-VN');
 }
 
+/** Nhãn hiển thị trạng thái DWIN (tránh hiện raw `unknown`). `null` = chờ batch sau khi tải danh sách. */
+function deviceStatusDisplayLabel(raw: string | null | undefined): string {
+    const s = String(raw ?? '').trim();
+    if (s === '' || s === 'null') {
+        return 'Đang tải trạng thái…';
+    }
+    const labels: Record<string, string> = {
+        unknown: 'Chưa xác định (DWIN)',
+        not_configured: 'Chưa cấu hình',
+        powering_on: 'Đang bật máy…',
+        configuring: 'Đang cấu hình…',
+        config_failed: 'Cấu hình thất bại',
+        expired: 'Hết hạn',
+        renewal_needed: 'Cần gia hạn',
+    };
+    return labels[s] ?? s;
+}
+
 const tableItems = ref<TableItem[]>([]);
 const selectedItems = ref<TableItem[]>([]);
 const loading = ref(false);
@@ -106,6 +128,11 @@ const searchInput = ref('');
 const searchDebounced = ref('');
 const operationsByDevice = ref<Record<number, DeviceOperation[]>>({});
 const loadingOperations = ref(false);
+
+const noteDialogOpen = ref(false);
+const noteDraft = ref('');
+const noteDeviceId = ref<number | null>(null);
+const savingNote = ref(false);
 
 /** Chỉ dùng khi máy đang powering_on / configuring — làm mới nhẹ trạng thái DuoPlus. */
 let deviceStatusPollTimer: ReturnType<typeof setInterval> | null = null;
@@ -238,6 +265,33 @@ function applyDeviceBalances(deviceId: number, balances: DeviceBalances): void {
     tableItems.value.splice(idx, 1, row);
 }
 
+/**
+ * Sau khi có danh sách (index không gọi DWIN từng dòng): một request batch theo `duo_api_key`.
+ */
+async function hydrateDeviceStatusesFromServer(): Promise<void> {
+    const ids = tableItems.value.map((x) => Number(x.id)).filter((id) => Number.isFinite(id));
+    if (ids.length === 0) {
+        return;
+    }
+
+    try {
+        const { data } = await http.post<{ statuses: Record<string, string> }>('/api/managed-devices/status-batch', {
+            ids,
+        });
+        const statuses = data.statuses ?? {};
+        tableItems.value = tableItems.value.map((row) => {
+            const id = String(row.id);
+            const st = statuses[id];
+            if (st === undefined) {
+                return row;
+            }
+            return { ...row, device_status: st };
+        });
+    } catch {
+        /* Giữ null — cột hiển thị "Đang tải…"; user bấm Tải lại */
+    }
+}
+
 async function loadDevices(options?: { silent?: boolean }): Promise<void> {
     const silent = options?.silent === true;
     if (!silent) {
@@ -254,6 +308,7 @@ async function loadDevices(options?: { silent?: boolean }): Promise<void> {
         });
         tableItems.value = data.data as TableItem[];
         serverItemsLength.value = Number(data.meta.total ?? 0);
+        await hydrateDeviceStatusesFromServer();
         maybeStartDeviceStatusPoll();
     } catch (e) {
         toast.error(errorMessage(e));
@@ -261,6 +316,69 @@ async function loadDevices(options?: { silent?: boolean }): Promise<void> {
         if (!silent) {
             loading.value = false;
         }
+    }
+}
+
+function notePreview(raw: string | null | undefined): string {
+    const s = typeof raw === 'string' ? raw.trim() : '';
+    if (s === '') {
+        return '—';
+    }
+    return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+}
+
+function deviceNoteTitle(item: Device): string {
+    const n = item.note;
+    if (typeof n === 'string' && n.trim() !== '') {
+        return n;
+    }
+
+    return 'Bấm dòng để thêm ghi chú';
+}
+
+function onDeviceRowClick(item: Record<string, unknown>): void {
+    const d = item as Device;
+    noteDeviceId.value = Number(d.id);
+    noteDraft.value = typeof d.note === 'string' ? d.note : '';
+    noteDialogOpen.value = true;
+}
+
+function onNoteDialogOpenChange(open: boolean): void {
+    noteDialogOpen.value = open;
+    if (!open) {
+        noteDeviceId.value = null;
+        noteDraft.value = '';
+    }
+}
+
+function closeNoteDialog(): void {
+    onNoteDialogOpenChange(false);
+}
+
+async function saveDeviceNote(): Promise<void> {
+    if (noteDeviceId.value === null) {
+        return;
+    }
+
+    savingNote.value = true;
+
+    try {
+        const { data } = await http.patch<{ data: Record<string, unknown> }>(
+            `/api/managed-devices/${noteDeviceId.value}/note`,
+            { note: noteDraft.value },
+        );
+
+        const payload = data.data;
+        if (payload && typeof payload === 'object') {
+            mergeDeviceRow(payload);
+        }
+
+        toast.success('Đã lưu ghi chú.');
+        closeNoteDialog();
+    } catch {
+        toast.error('Không lưu được ghi chú.');
+    } finally {
+        savingNote.value = false;
     }
 }
 
@@ -317,8 +435,9 @@ function maybeStartDeviceStatusPoll(): void {
     }, 2500);
 }
 
-async function loadOperationFeed(silent = false): Promise<void> {
-    if (loadingOperations.value) {
+async function loadOperationFeed(silent = false, options?: { force?: boolean }): Promise<void> {
+    const force = options?.force === true;
+    if (!force && loadingOperations.value) {
         return;
     }
 
@@ -346,6 +465,12 @@ async function loadOperationFeed(silent = false): Promise<void> {
     } finally {
         loadingOperations.value = false;
     }
+}
+
+async function refreshDevicesList(): Promise<void> {
+    await loadDevices();
+    await loadOperationFeed(true, { force: true });
+    toast.success('Đã tải lại danh sách thiết bị.');
 }
 
 async function deleteOne(row: Device): Promise<void> {
@@ -516,17 +641,25 @@ onBeforeUnmount(() => {
                     </div>
                 </CardHeader>
                 <CardContent class="space-y-4">
-                    <div class="max-w-sm space-y-2">
-                        <Label for="search">Tìm kiếm</Label>
-                        <Input id="search" v-model="searchInput" placeholder="Tên / dwin key / image id..."
-                            autocomplete="off" />
+                    <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4">
+                        <div class="max-w-sm flex-1 space-y-2">
+                            <Label for="search">Tìm kiếm</Label>
+                            <Input id="search" v-model="searchInput" placeholder="Tên / dwin key / image id..."
+                                autocomplete="off" />
+                        </div>
+                        <AppButton type="button" variant="outline" size="sm"
+                            :disabled="loading || loadingOperations"
+                            class="shrink-0 self-start sm:self-auto" @click="refreshDevicesList">
+                            <RefreshCw class="mr-1 size-4" :class="{ 'animate-spin': loading || loadingOperations }" />
+                            Tải lại
+                        </AppButton>
                     </div>
                     <div
                         class="overflow-x-auto rounded-lg border border-sidebar-border/70 bg-card p-2 dark:border-sidebar-border">
                         <Vue3EasyDataTable v-model:server-options="serverOptions" v-model:items-selected="selectedItems"
                             :headers="headers" :items="tableItems" :loading="loading"
                             :server-items-length="serverItemsLength" :rows-items="[10, 25, 50]" :rows-per-page="10"
-                            buttons-pagination border-cell theme-color="#6366f1">
+                            buttons-pagination border-cell theme-color="#6366f1" @click-row="onDeviceRowClick">
                             <template #item-device_status="item">
                                 <div class="flex items-center gap-2" :title="String(item.device_status ?? '')">
                                     <div v-if="item.device_status === 'off'"
@@ -556,9 +689,17 @@ onBeforeUnmount(() => {
                                     </div>
                                 </div>
                             </template>
+                            <template #item-note="item">
+                                <div
+                                    class="max-w-44 cursor-pointer truncate text-left text-xs text-muted-foreground"
+                                    :title="deviceNoteTitle(item as Device)"
+                                >
+                                    {{ notePreview((item as Device).note) }}
+                                </div>
+                            </template>
                             <template #item-actions="item">
-                                <div class="flex flex-col gap-2 py-2" v-if="!isBusy((item as Device).id)">
-                                    <div class="flex flex-wrap items-centeE gap-2 pb-2">
+                                <div class="flex flex-col gap-2 py-2" @click.stop v-if="!isBusy((item as Device).id)">
+                                    <div class="flex flex-wrap items-center gap-2 pb-2">
                                         <AppButton v-if="item.device_status === 'off'" type="button" size="sm"
                                             variant="outline" color="primary" :disabled="isBusy((item as Device).id)"
                                             @click="setPower(item as Device, 'on')">
@@ -569,8 +710,9 @@ onBeforeUnmount(() => {
                                             @click="setPower(item as Device, 'off')">
                                             Tắt máy
                                         </AppButton>
-                                        <span v-else class="text-xs text-muted-foreground">Đang xử lí ({{
-                                            item.device_status }})</span>
+                                        <span v-else class="text-xs text-muted-foreground" :title="String(item.device_status ?? '')">
+                                            {{ deviceStatusDisplayLabel(String(item.device_status ?? '')) }}
+                                        </span>
 
                                         <AppButton v-if="item.device_status == 'on' || item.device_status == 'off'"
                                             :as="Link" size="sm" color="warning" variant="solid"
@@ -619,7 +761,7 @@ onBeforeUnmount(() => {
                                         </div>
                                     </div>
                                 </div>
-                                <div v-else class="flex itesm-center justify-center p-1">
+                                <div v-else class="flex items-center justify-center p-1">
                                     <span class="loader"></span>
                                 </div>
                             </template>
@@ -674,5 +816,32 @@ onBeforeUnmount(() => {
                 </CardContent>
             </Card>
         </div>
+
+        <Dialog :open="noteDialogOpen" @update:open="onNoteDialogOpenChange">
+            <DialogContent class="sm:max-w-md">
+                <DialogHeader>
+                    <DialogTitle>Ghi chú thiết bị</DialogTitle>
+                </DialogHeader>
+                <div class="space-y-2">
+                    <Label for="device-note">Nội dung (tối đa 2000 ký tự)</Label>
+                    <textarea
+                        id="device-note"
+                        v-model="noteDraft"
+                        rows="5"
+                        maxlength="2000"
+                        class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
+                        placeholder="Ghi chú nội bộ cho thiết bị này…"
+                    />
+                </div>
+                <DialogFooter class="gap-2 sm:gap-0">
+                    <AppButton type="button" variant="outline" :disabled="savingNote" @click="closeNoteDialog">
+                        Hủy
+                    </AppButton>
+                    <AppButton type="button" color="primary" variant="solid" :disabled="savingNote" @click="saveDeviceNote">
+                        Lưu
+                    </AppButton>
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
     </div>
 </template>

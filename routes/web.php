@@ -64,6 +64,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('managed-devices', [ManagedDeviceController::class, 'index'])
             ->name('api.managed-devices.index')
             ->can('viewAny', Device::class);
+        Route::post('managed-devices/status-batch', [ManagedDeviceController::class, 'statusBatch'])
+            ->name('api.managed-devices.status-batch')
+            ->can('viewAny', Device::class);
         Route::post('managed-devices', [ManagedDeviceController::class, 'store'])
             ->name('api.managed-devices.store')
             ->can('create', Device::class);
@@ -81,6 +84,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->can('viewAny', Device::class);
         Route::put('managed-devices/{device}', [ManagedDeviceController::class, 'update'])
             ->name('api.managed-devices.update')
+            ->can('update', 'device');
+        Route::patch('managed-devices/{device}/note', [ManagedDeviceController::class, 'updateNote'])
+            ->name('api.managed-devices.note')
             ->can('update', 'device');
         Route::post('managed-devices/{device}/power', [ManagedDeviceController::class, 'power'])
             ->name('api.managed-devices.power')

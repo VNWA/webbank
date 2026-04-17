@@ -111,6 +111,56 @@ class DuoPlusApi
     }
 
     /**
+     * Một request DWIN `/cloudPhone/status` với nhiều `image_ids` (cùng DuoPlus API key).
+     *
+     * @param  list<string>  $imageIds
+     * @return array<string, string> image_id => nhãn (on, off, unknown, …)
+     */
+    public function liveDeviceStatusLabelsForImages(string $apiKey, array $imageIds): array
+    {
+        $imageIds = array_values(array_unique(array_filter(array_map('strval', $imageIds))));
+        if ($imageIds === []) {
+            return [];
+        }
+
+        $result = $this->post($apiKey, '/api/v1/cloudPhone/status', [
+            'image_ids' => $imageIds,
+        ]);
+
+        if (! $result['ok']) {
+            return array_fill_keys($imageIds, 'unknown');
+        }
+
+        $list = data_get($result['data'], 'data.list');
+        if (! is_array($list)) {
+            return array_fill_keys($imageIds, 'unknown');
+        }
+
+        $byImage = [];
+        foreach ($list as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+
+            $rowId = (string) data_get($item, 'id', data_get($item, 'image_id', ''));
+            if ($rowId === '') {
+                continue;
+            }
+
+            $raw = data_get($item, 'status');
+            $code = is_int($raw) ? $raw : (is_numeric($raw) ? (int) $raw : null);
+            $byImage[$rowId] = $this->mapCloudPhoneStatusCode($code);
+        }
+
+        $out = [];
+        foreach ($imageIds as $id) {
+            $out[$id] = $byImage[$id] ?? 'unknown';
+        }
+
+        return $out;
+    }
+
+    /**
      * @param  array<string, mixed>  $json  Payload JSON gốc (có `code`, `data`, …)
      */
     public function extractCloudPhoneStatusCode(array $json, string $imageId): ?int

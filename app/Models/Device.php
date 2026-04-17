@@ -29,6 +29,7 @@ class Device extends Model
         'baca_balance',
         'pg_balance_updated_at',
         'baca_balance_updated_at',
+        'note',
     ];
 
     protected function casts(): array

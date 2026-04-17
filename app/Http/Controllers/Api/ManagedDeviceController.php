@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\BulkDeleteManagedDevicesRequest;
 use App\Http\Requests\StoreDevicePowerRequest;
 use App\Http\Requests\StoreManagedDeviceRequest;
+use App\Http\Requests\UpdateDeviceNoteRequest;
 use App\Http\Requests\UpdateManagedDeviceRequest;
 use App\Http\Resources\ManagedDeviceResource;
 use App\Models\Device;
@@ -43,6 +44,61 @@ class ManagedDeviceController extends Controller
         return ManagedDeviceResource::collection($query->paginate($perPage));
     }
 
+    /**
+     * Trạng thái máy ảo DWIN theo batch (gom theo `duo_api_key`, ít request hơn so với gọi khi render từng dòng).
+     *
+     * @return JsonResponse array{statuses: array<string, string>}
+     */
+    public function statusBatch(Request $request, DuoPlusApi $duoPlusApi): JsonResponse
+    {
+        $this->authorize('viewAny', Device::class);
+
+        $validated = $request->validate([
+            'ids' => ['required', 'array', 'max:50'],
+            'ids.*' => ['integer'],
+        ]);
+
+        $ids = array_values(array_unique(array_filter(
+            array_map(static fn (mixed $id): int => (int) $id, $validated['ids']),
+            static fn (int $id): bool => $id > 0,
+        )));
+
+        $devices = Device::query()->whereIn('id', $ids)->get();
+
+        foreach ($devices as $device) {
+            $this->authorize('view', $device);
+        }
+
+        $mapByDeviceId = [];
+        $byKey = $devices->groupBy('duo_api_key');
+
+        foreach ($byKey as $apiKey => $group) {
+            $key = (string) $apiKey;
+            if ($key === '') {
+                foreach ($group as $d) {
+                    $mapByDeviceId[$d->id] = 'unknown';
+                }
+
+                continue;
+            }
+
+            $imageIds = $group->pluck('image_id')->map(fn ($id) => (string) $id)->unique()->values()->all();
+            $labelsByImage = $duoPlusApi->liveDeviceStatusLabelsForImages($key, $imageIds);
+
+            foreach ($group as $device) {
+                $img = (string) $device->image_id;
+                $mapByDeviceId[$device->id] = $labelsByImage[$img] ?? 'unknown';
+            }
+        }
+
+        $out = [];
+        foreach ($ids as $id) {
+            $out[(string) $id] = $mapByDeviceId[$id] ?? 'unknown';
+        }
+
+        return response()->json(['statuses' => $out]);
+    }
+
     public function store(StoreManagedDeviceRequest $request): JsonResponse
     {
         $data = $request->validated();
@@ -61,6 +117,16 @@ class ManagedDeviceController extends Controller
     public function update(UpdateManagedDeviceRequest $request, Device $device): ManagedDeviceResource
     {
         $device->update($request->validated());
+
+        return ManagedDeviceResource::make($device->fresh()->load('user:id,name'));
+    }
+
+    public function updateNote(UpdateDeviceNoteRequest $request, Device $device): ManagedDeviceResource
+    {
+        $note = $request->validated('note');
+        $normalized = is_string($note) && trim($note) !== '' ? trim($note) : null;
+
+        $device->update(['note' => $normalized]);
 
         return ManagedDeviceResource::make($device->fresh()->load('user:id,name'));
     }

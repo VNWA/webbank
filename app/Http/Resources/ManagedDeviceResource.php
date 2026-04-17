@@ -2,11 +2,12 @@
 
 namespace App\Http\Resources;
 
+use App\Models\Device;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
 /**
- * @mixin \App\Models\Device
+ * @mixin Device
  */
 class ManagedDeviceResource extends JsonResource
 {
@@ -15,6 +16,12 @@ class ManagedDeviceResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        /** Danh sách index: không gọi DWIN từng dòng — client gọi `status-batch` sau. */
+        $includeLiveStatus = $request->boolean(
+            'with_live_status',
+            ! $request->routeIs('api.managed-devices.index'),
+        );
+
         return [
             'id' => $this->id,
             'user_id' => $this->user_id,
@@ -22,7 +29,7 @@ class ManagedDeviceResource extends JsonResource
             'status' => $this->status,
             'duo_api_key' => $this->duo_api_key,
             'image_id' => $this->image_id,
-            'device_status' => $this->device_status,
+            'device_status' => $includeLiveStatus ? $this->device_status : null,
             'name' => $this->name,
             'pg_pass' => $this->pg_pass,
             'pg_pin' => $this->pg_pin,
@@ -34,6 +41,7 @@ class ManagedDeviceResource extends JsonResource
             'baca_balance' => $this->baca_balance,
             'pg_balance_updated_at' => $this->pg_balance_updated_at?->toIso8601String(),
             'baca_balance_updated_at' => $this->baca_balance_updated_at?->toIso8601String(),
+            'note' => $this->note,
             'created_at' => $this->created_at?->toIso8601String(),
             'updated_at' => $this->updated_at?->toIso8601String(),
         ];
