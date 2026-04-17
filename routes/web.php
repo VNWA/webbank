@@ -16,9 +16,9 @@ use Illuminate\Support\Facades\Route;
 Route::inertia('/', 'Welcome', [
     // Disable public user registration (users are created via Manager User).
 ])->name('home');
+Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
     Route::get('user-management', [UserManagementController::class, 'index'])
         ->name('user-management.index')

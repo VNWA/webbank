@@ -10,7 +10,7 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request, DashboardStatsService $dashboardStatsService): Response
+    public function index(Request $request): Response
     {
         $stats = null;
         // if ($request->user()?->can('viewAny', Device::class)) {
