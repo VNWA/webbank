@@ -76,18 +76,18 @@ function refreshStats(): void {
             </AppButton>
         </div>
 
-        <p v-if="stats === null" class="text-sm text-muted-foreground">
+        <!-- <p v-if="stats === null" class="text-sm text-muted-foreground">
             Bạn không có quyền xem thống kê hệ thống. Liên hệ quản trị viên nếu cần.
-        </p>
+        </p> -->
 
-        <div v-else class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Card>
                 <CardHeader class="flex flex-row items-center justify-between space-y-0 pb-2">
                     <CardTitle class="text-sm font-medium">Người dùng</CardTitle>
                     <Users class="size-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                    <div class="text-2xl font-bold" v-if="stats !== null">10</div>
+                    <div class="text-2xl font-bold">10</div>
                     <CardDescription>Tổng tài khoản trong hệ thống</CardDescription>
                 </CardContent>
             </Card>
