@@ -11,6 +11,7 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
             refresh: true,
         }),
+        // Tắt bundle SSR: chỉ bật (và `inertia:start-ssr`) khi thật sự cần render phía Node — tránh lỗi origin khi F5 nếu không chạy SSR.
         inertia({
             ssr: false,
         }),

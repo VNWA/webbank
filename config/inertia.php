@@ -16,7 +16,8 @@ return [
     */
 
     'ssr' => [
-        'enabled' => env('INERTIA_SSR_ENABLED', false),
+        /** Chuỗi "false" / "0" trong .env phải được coi là tắt (tránh SSR bật nhầm và gọi Node khi F5). */
+        'enabled' => filter_var(env('INERTIA_SSR_ENABLED', false), FILTER_VALIDATE_BOOLEAN),
         'url' => env('INERTIA_SSR_URL', 'http://127.0.0.1:13714'),
         // 'bundle' => base_path('bootstrap/ssr/ssr.mjs'),
 
