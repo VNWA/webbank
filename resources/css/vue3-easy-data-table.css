@@ -1,4 +1,5 @@
-@import 'vue3-easy-data-table/dist/style.css';
+/* Bản vá: dist gốc có `var(easy-table-...)` thiếu `--` → Lightningcss minify lỗi. Cập nhật khi nâng phiên bản package. */
+@import './vendor/vue3-easy-data-table.css';
 
 /* Global table polish */
 .vue3-easy-data-table {

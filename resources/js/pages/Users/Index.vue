@@ -5,7 +5,6 @@ import axios, { isAxiosError } from 'axios';
 import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import Vue3EasyDataTable from 'vue3-easy-data-table';
-import 'vue3-easy-data-table/dist/style.css';
 import { Button } from '@/components/ui/button';
 import {
     Card,
