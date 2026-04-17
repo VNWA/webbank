@@ -1,4 +1,4 @@
-<!-- <script setup lang="ts">
+<script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import { Banknote, RefreshCw, Smartphone, Users } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
@@ -68,7 +68,10 @@ function refreshStats(): void {
 <template>
 
     <Head title="Dashboard" />
-
+    <div>
+        ádgasdg
+    </div>
+    <!--
     <div class="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
         <div class="flex flex-wrap items-center justify-between gap-2">
             <h1 class="text-lg font-semibold text-foreground">Tổng quan</h1>
@@ -138,16 +141,5 @@ function refreshStats(): void {
                 </CardDescription>
             </CardHeader>
         </Card>
-    </div>
-</template> -->
-<template>
-    <div>
-
-    </div>
+    </div> -->
 </template>
-
-<script lang="ts" setup>
-
-</script>
-
-<style></style>
