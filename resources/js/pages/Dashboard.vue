@@ -6,7 +6,7 @@ import { toast } from 'vue-sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import AppButton from '@/components/AppButton.vue';
 import { dashboard } from '@/routes';
-
+import http from '@/lib/axios';
 export type DashboardStats = {
     users_count: number;
     devices_count: number;
