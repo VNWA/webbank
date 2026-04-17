@@ -9,13 +9,9 @@ export default defineConfig({
     plugins: [
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
-            ssr: 'resources/js/ssr.js',
-
             refresh: true,
         }),
-        inertia({
-            ssr: false,
-        }),
+        inertia(),
         tailwindcss(),
         vue({
             template: {
@@ -29,9 +25,4 @@ export default defineConfig({
             formVariants: true,
         }),
     ],
-    // `lightningcss minify` đang fail với CSS của `vue3-easy-data-table` (var(--*) bị parse lỗi).
-    build: {
-        // Tắt minify CSS để build production không vỡ do parser lightningcss/esbuild.
-        cssMinify: false,
-    },
 });
