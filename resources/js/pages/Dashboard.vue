@@ -1,4 +1,4 @@
-<script setup lang="ts">
+<!-- <script setup lang="ts">
 import { Head, router } from '@inertiajs/vue3';
 import { Banknote, RefreshCw, Smartphone, Users } from 'lucide-vue-next';
 import { computed, ref } from 'vue';
@@ -139,4 +139,15 @@ function refreshStats(): void {
             </CardHeader>
         </Card>
     </div>
+</template> -->
+<template>
+    <div>
+
+    </div>
 </template>
+
+<script lang="ts" setup>
+
+</script>
+
+<style></style>
