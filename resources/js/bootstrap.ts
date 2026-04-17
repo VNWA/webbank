@@ -14,4 +14,6 @@ axios.defaults.withXSRFToken = true;
 axios.defaults.xsrfCookieName = 'XSRF-TOKEN';
 axios.defaults.xsrfHeaderName = 'X-XSRF-TOKEN';
 
-window.axios = axios;
+if (!import.meta.env.SSR && typeof window !== 'undefined') {
+    window.axios = axios;
+}

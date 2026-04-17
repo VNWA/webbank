@@ -6,7 +6,9 @@ use App\Enums\ApplicationRole;
 use App\Jobs\ProcessDeviceOperation;
 use App\Models\Device;
 use App\Models\DeviceOperation;
+use App\Models\DeviceOperationLog;
 use App\Models\User;
+use App\Services\DuoPlusApi;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
@@ -153,10 +155,27 @@ class DeviceOperationTest extends TestCase
             'status' => 'queued',
         ]);
 
-        (new ProcessDeviceOperation($operation->id))->handle(app(\App\Services\DuoPlusApi::class));
+        (new ProcessDeviceOperation($operation->id))->handle(app(DuoPlusApi::class));
 
         $operation->refresh();
         $this->assertSame('success', $operation->status);
-        $this->assertGreaterThanOrEqual(11, \App\Models\DeviceOperationLog::query()->count());
+        $this->assertGreaterThanOrEqual(11, DeviceOperationLog::query()->count());
+    }
+
+    public function test_queue_retry_after_covers_process_device_operation_timeout(): void
+    {
+        $jobTimeout = (new ProcessDeviceOperation(0))->timeout;
+        $message = 'retry_after phải ≥ timeout job dài nhất (database/redis), nếu không job có thể bị chạy trùng.';
+
+        $this->assertGreaterThanOrEqual(
+            $jobTimeout,
+            config('queue.connections.database.retry_after'),
+            $message,
+        );
+        $this->assertGreaterThanOrEqual(
+            $jobTimeout,
+            config('queue.connections.redis.retry_after'),
+            $message,
+        );
     }
 }

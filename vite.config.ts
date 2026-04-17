@@ -11,10 +11,8 @@ export default defineConfig({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
             refresh: true,
         }),
-        // Tắt bundle SSR: chỉ bật (và `inertia:start-ssr`) khi thật sự cần render phía Node — tránh lỗi origin khi F5 nếu không chạy SSR.
-        inertia({
-            ssr: false,
-        }),
+        // SSR: dev dùng endpoint `/__inertia_ssr` trên Vite; production cần `npm run build:ssr` và `php artisan inertia:start-ssr`.
+        inertia(),
         tailwindcss(),
         vue({
             template: {

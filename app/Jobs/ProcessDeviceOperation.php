@@ -27,6 +27,13 @@ class ProcessDeviceOperation implements ShouldQueue
 
     public int $tries = 1;
 
+    /**
+     * Thời điểm (microtime) broadcast gần nhất từ phương thức log — tránh gửi trùng lặp tới Reverb khi có nhiều dòng log liên tiếp.
+     */
+    private float $lastBroadcastFromLogAt = 0.0;
+
+    private const LOG_BROADCAST_MIN_INTERVAL_SEC = 1.5;
+
     public function __construct(public int $operationId)
     {
         $this->onQueue('devices');
@@ -1542,6 +1549,21 @@ class ProcessDeviceOperation implements ShouldQueue
             'message' => $message,
             'meta' => $meta,
         ]);
+        $this->maybeBroadcastAfterLog($operation);
+    }
+
+    /**
+     * Giới hạn tần suất broadcast khi tạo nhiều log liên tiếp (tránh spam Reverb; UI vẫn nhận cập nhật vài lần/giây khi đang chạy).
+     */
+    private function maybeBroadcastAfterLog(DeviceOperation $operation): void
+    {
+        $now = microtime(true);
+
+        if (($now - $this->lastBroadcastFromLogAt) < self::LOG_BROADCAST_MIN_INTERVAL_SEC) {
+            return;
+        }
+
+        $this->lastBroadcastFromLogAt = $now;
         $this->broadcast($operation);
     }
 

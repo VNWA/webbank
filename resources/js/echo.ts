@@ -7,10 +7,15 @@ declare global {
     }
 }
 
-window.Pusher = Pusher;
+function createEcho(): InstanceType<typeof Echo> | null {
+    if (import.meta.env.SSR || typeof window === 'undefined') {
+        return null;
+    }
 
-const echo = (() => {
+    window.Pusher = Pusher;
+
     const key = import.meta.env.VITE_REVERB_APP_KEY ?? '';
+
     if (key === '') {
         return null;
     }
@@ -24,6 +29,8 @@ const echo = (() => {
         forceTLS: (import.meta.env.VITE_REVERB_SCHEME ?? 'https') === 'https',
         enabledTransports: ['ws', 'wss'],
     });
-})();
+}
+
+const echo = createEcho();
 
 export default echo;
