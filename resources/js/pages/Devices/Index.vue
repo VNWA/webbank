@@ -83,7 +83,7 @@ const headers: TableHeader[] = [
     { text: 'Tên thiết bị', value: 'name', sortable: true },
     { text: 'PG Số dư', value: 'pg_balance' },
     { text: 'Bắc Á Số dư', value: 'baca_balance' },
-    { text: 'Ghi chú', value: 'note', width: 180 },
+    { text: 'Ghi chú', value: 'note' },
     { text: '', value: 'actions' },
 ];
 
@@ -324,7 +324,7 @@ function notePreview(raw: string | null | undefined): string {
     if (s === '') {
         return '—';
     }
-    return s.length > 80 ? `${s.slice(0, 80)}…` : s;
+    return s.length > 200 ? `${s.slice(0, 200)}…` : s;
 }
 
 function deviceNoteTitle(item: Device): string {
@@ -647,8 +647,7 @@ onBeforeUnmount(() => {
                             <Input id="search" v-model="searchInput" placeholder="Tên / dwin key / image id..."
                                 autocomplete="off" />
                         </div>
-                        <AppButton type="button" variant="outline" size="sm"
-                            :disabled="loading || loadingOperations"
+                        <AppButton type="button" variant="outline" size="sm" :disabled="loading || loadingOperations"
                             class="shrink-0 self-start sm:self-auto" @click="refreshDevicesList">
                             <RefreshCw class="mr-1 size-4" :class="{ 'animate-spin': loading || loadingOperations }" />
                             Tải lại
@@ -690,11 +689,11 @@ onBeforeUnmount(() => {
                                 </div>
                             </template>
                             <template #item-note="item">
-                                <div
-                                    class="max-w-44 cursor-pointer truncate text-left text-xs text-muted-foreground"
-                                    :title="deviceNoteTitle(item as Device)"
-                                >
-                                    {{ notePreview((item as Device).note) }}
+                                <div class=" cursor-pointer  text-left text-xs text-muted-foreground"
+                                    :title="deviceNoteTitle(item as Device)">
+                                    <div class="max-w-44 text-truncate overflow-hidden">
+                                        {{ notePreview((item as Device).note) }}
+                                    </div>
                                 </div>
                             </template>
                             <template #item-actions="item">
@@ -710,7 +709,8 @@ onBeforeUnmount(() => {
                                             @click="setPower(item as Device, 'off')">
                                             Tắt máy
                                         </AppButton>
-                                        <span v-else class="text-xs text-muted-foreground" :title="String(item.device_status ?? '')">
+                                        <span v-else class="text-xs text-muted-foreground"
+                                            :title="String(item.device_status ?? '')">
                                             {{ deviceStatusDisplayLabel(String(item.device_status ?? '')) }}
                                         </span>
 
@@ -824,20 +824,16 @@ onBeforeUnmount(() => {
                 </DialogHeader>
                 <div class="space-y-2">
                     <Label for="device-note">Nội dung (tối đa 2000 ký tự)</Label>
-                    <textarea
-                        id="device-note"
-                        v-model="noteDraft"
-                        rows="5"
-                        maxlength="2000"
+                    <textarea id="device-note" v-model="noteDraft" rows="5" maxlength="2000"
                         class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                        placeholder="Ghi chú nội bộ cho thiết bị này…"
-                    />
+                        placeholder="Ghi chú nội bộ cho thiết bị này…" />
                 </div>
                 <DialogFooter class="gap-2 sm:gap-0">
                     <AppButton type="button" variant="outline" :disabled="savingNote" @click="closeNoteDialog">
                         Hủy
                     </AppButton>
-                    <AppButton type="button" color="primary" variant="solid" :disabled="savingNote" @click="saveDeviceNote">
+                    <AppButton type="button" color="primary" variant="solid" :disabled="savingNote"
+                        @click="saveDeviceNote">
                         Lưu
                     </AppButton>
                 </DialogFooter>
