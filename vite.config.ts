@@ -9,10 +9,13 @@ export default defineConfig({
     plugins: [
         laravel({
             input: ['resources/css/app.css', 'resources/js/app.ts'],
+            ssr: 'resources/js/ssr.js',
+
             refresh: true,
         }),
-        // SSR: dev dùng endpoint `/__inertia_ssr` trên Vite; production cần `npm run build:ssr` và `php artisan inertia:start-ssr`.
-        inertia(),
+        inertia({
+            ssr: false,
+        }),
         tailwindcss(),
         vue({
             template: {
