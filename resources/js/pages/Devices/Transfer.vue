@@ -448,13 +448,9 @@ onMounted(() => {
                         </div>
                         <div class="space-y-2">
                             <Label>Số tiền</Label>
-                            <Input
-                                :model-value="formatVndFromDigits(amountDigits)"
-                                inputmode="numeric"
-                                placeholder="VD: 1.000.000"
-                                @update:model-value="onAmountModelUpdate"
-                                @paste="onAmountPaste"
-                            />
+                            <Input :model-value="formatVndFromDigits(amountDigits)" inputmode="numeric"
+                                placeholder="VD: 1.000.000" @update:model-value="onAmountModelUpdate"
+                                @paste="onAmountPaste" />
                         </div>
                         <div class="space-y-2">
                             <Label>Nội dung</Label>
@@ -462,17 +458,12 @@ onMounted(() => {
                               Nội dung chuyển khoản (payload `content` → lệnh pg_transfer / baca_transfer).
                               Giới hạn độ dài theo ngân hàng; khi gõ, script chỉ chuẩn hoá ký tự (không xoá khoảng trắng cuối đang gõ).
                             -->
-                            <textarea
-                                v-model="contentInput"
-                                :maxlength="CONTENT_MAX_LEN"
-                                rows="3"
+                            <textarea v-model="contentInput" :maxlength="CONTENT_MAX_LEN" rows="3"
                                 class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                                placeholder="VD: THANH TOAN HOA DON"
-                                autocomplete="off"
-                                spellcheck="false"
-                            />
+                                placeholder="VD: THANH TOAN HOA DON" autocomplete="off" spellcheck="false" />
                             <p class="text-xs text-muted-foreground">
-                                Khi gõ: IN HOA, bỏ dấu, chỉ A-Z / 0-9 / khoảng trắng (gộp nhiều space thành một). Khi gửi
+                                Khi gõ: IN HOA, bỏ dấu, chỉ A-Z / 0-9 / khoảng trắng (gộp nhiều space thành một). Khi
+                                gửi
                                 lệnh: trim đầu-cuối. Tối đa {{ CONTENT_MAX_LEN }} ký tự.
                             </p>
                         </div>
