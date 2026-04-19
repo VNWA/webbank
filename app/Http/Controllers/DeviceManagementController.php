@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Bank;
 use App\Models\Device;
+use App\Models\SavedTransferRecipient;
 use Illuminate\Http\Request;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -58,6 +60,20 @@ class DeviceManagementController extends Controller
                 'name',
                 'image_id',
             ]),
+            'banks' => Bank::query()
+                ->orderBy('name')
+                ->get(['id', 'code', 'name', 'short_name', 'pg_name', 'baca_name'])
+                ->map(fn (Bank $b): array => [
+                    'id' => $b->id,
+                    'code' => $b->code,
+                    'name' => $b->name,
+                    'short_name' => $b->short_name,
+                    'pg_name' => $b->pg_name,
+                    'baca_name' => $b->baca_name,
+                ])
+                ->values()
+                ->all(),
+            'savedRecipients' => SavedTransferRecipient::rowsForTransferPage($device),
         ]);
     }
 }

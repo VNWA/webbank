@@ -2,7 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import { watchDebounced } from '@vueuse/core';
 import axios from 'axios';
-import { computed, onMounted, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { toast } from 'vue-sonner';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
 import { dashboard } from '@/routes';
 import deviceManagement from '@/routes/device-management';
+import managedDevices from '@/routes/api/managed-devices';
 
 type DeviceLite = {
     id: number;
@@ -18,18 +19,21 @@ type DeviceLite = {
     image_id: string;
 };
 
-type BankOption = {
+/** Hàng từ bảng `banks` (Inertia). */
+type BankRow = {
+    id: number;
     code: string;
-    short_name: string;
     name: string;
-    bin: string;
-    lookup_supported: boolean;
+    short_name: string;
+    pg_name: string;
+    baca_name: string;
 };
 
 type SavedRecipient = {
-    id: string;
-    label: string;
+    id: number;
+    bank_id: number;
     bank_code: string;
+    label: string;
     bank_name: string;
     account_number: string;
     recipient_name: string;
@@ -46,20 +50,26 @@ defineOptions({
     },
 });
 
-const props = defineProps<{
-    device: DeviceLite;
-}>();
+const props = withDefaults(
+    defineProps<{
+        device: DeviceLite;
+        banks: BankRow[];
+        savedRecipients?: SavedRecipient[];
+    }>(),
+    { savedRecipients: () => [] },
+);
 
 const step = ref<1 | 2>(1);
 
-const bankOptions = ref<BankOption[]>([]);
 const bankSearch = ref('');
-const loadingBanks = ref(false);
 
-const savedRecipients = ref<SavedRecipient[]>([]);
+const savedRecipients = ref<SavedRecipient[]>([...(props.savedRecipients ?? [])]);
 const selectedSavedRecipientId = ref<string>('');
+const savingRecipient = ref(false);
 
-const bankCode = ref('');
+/** `id` bản ghi `banks` (select value). */
+const bankId = ref<string>('');
+
 const accountNumberInput = ref('');
 const recipientName = ref('');
 const verifyingRecipient = ref(false);
@@ -72,107 +82,100 @@ const submitting = ref(false);
 
 const CONTENT_MAX_LEN = 35;
 
+const bankList = computed(() => props.banks ?? []);
+
 const filteredBanks = computed(() => {
     const q = bankSearch.value.trim().toLowerCase();
     if (q === '') {
-        return bankOptions.value;
+        return bankList.value;
     }
 
-    return bankOptions.value.filter((bank) => {
+    return bankList.value.filter((bank) => {
         return (
             bank.name.toLowerCase().includes(q) ||
-            bank.short_name.toLowerCase().includes(q) ||
-            bank.code.toLowerCase().includes(q)
+            bank.code.toLowerCase().includes(q) ||
+            (bank.short_name && bank.short_name.toLowerCase().includes(q))
         );
     });
 });
 
-const selectedBank = computed(() => bankOptions.value.find((b) => b.code === bankCode.value) ?? null);
+const selectedBank = computed(
+    () => bankList.value.find((b) => String(b.id) === bankId.value) ?? null,
+);
+
 const accountNumber = computed(() => accountNumberInput.value.replace(/\s+/g, '').trim());
-const canContinueStep1 = computed(() => bankCode.value !== '' && accountNumber.value.length >= 6);
+const canContinueStep1 = computed(() => bankId.value !== '' && accountNumber.value.length >= 6);
 
-const PG_BANK_PATTERNS = ['PGB', 'PGBANK', 'PG BANK'];
-const BACA_BANK_PATTERNS = ['BAB', 'BACABANK', 'BAC A BANK', 'BACA'];
-
-function isSameBankAsChannel(bank: BankOption | null, ch: 'pg' | 'baca'): boolean {
-    if (!bank) return false;
-    const upper = (s: string) => s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-    const code = upper(bank.code);
-    const short = upper(bank.short_name);
-    const patterns = ch === 'pg' ? PG_BANK_PATTERNS : BACA_BANK_PATTERNS;
-    return patterns.some((p) => {
-        const up = upper(p);
-        return code === up || short === up || code.includes(up) || short.includes(up);
-    });
+/** Chuỗi gõ tìm NH trên app PG / Bắc Á (ưu tiên pg_name / baca_name; nếu nhiều nhãn ` | ` thì lấy nhãn đầu để khớp list app). */
+function appBankSearchName(b: BankRow, ch: 'pg' | 'baca'): string {
+    const raw = (ch === 'pg' ? b.pg_name : b.baca_name).trim();
+    if (raw !== '') {
+        const first = raw.split(' | ')[0]?.trim() ?? '';
+        if (first !== '') {
+            return first;
+        }
+    }
+    return b.name;
 }
 
-/** Gợi ý: server sẽ gán luồng nội bộ trên app khi NH nhận khớp kênh (không chặn gửi lệnh). */
+/** Nội bộ: mã NH nhận trùng NH vận hành kênh — PG = PGB, Bắc Á = BAB (theo `banks.code`). */
+function isInternalForChannel(b: BankRow | null, ch: 'pg' | 'baca'): boolean {
+    if (!b) {
+        return false;
+    }
+    const c = b.code.trim().toUpperCase();
+    if (ch === 'pg') {
+        return c === 'PGB';
+    }
+    return c === 'BAB';
+}
+
 const internalTransferHint = computed<string | null>(() => {
-    if (!selectedBank.value) return null;
-    if (isSameBankAsChannel(selectedBank.value, channel.value)) {
+    if (!selectedBank.value) {
+        return null;
+    }
+    if (isInternalForChannel(selectedBank.value, channel.value)) {
         const label = channel.value === 'pg' ? 'PG Bank' : 'Bắc Á Bank';
-        return `Ngân hàng nhận trùng kênh ${label}: lệnh sẽ chạy luồng chuyển nội bộ trên app (không chọn NH liên ngân hàng).`;
+        return `Ngân hàng nhận trùng kênh ${label} (mã ${selectedBank.value.code}): lệnh sẽ chạy luồng chuyển nội bộ trên app.`;
     }
     return null;
 });
 
-function localStorageKey(deviceId: number): string {
-    return `webBank.transfer.recipients.device.${deviceId}`;
-}
-
-function loadSavedRecipients(): void {
-    try {
-        const raw = window.localStorage.getItem(localStorageKey(props.device.id));
-        if (!raw) {
-            savedRecipients.value = [];
-            return;
-        }
-        const parsed = JSON.parse(raw) as unknown;
-        if (!Array.isArray(parsed)) {
-            savedRecipients.value = [];
-            return;
-        }
-        savedRecipients.value = parsed as SavedRecipient[];
-    } catch {
-        savedRecipients.value = [];
-    }
-}
-
-function persistSavedRecipients(): void {
-    window.localStorage.setItem(localStorageKey(props.device.id), JSON.stringify(savedRecipients.value.slice(0, 30)));
-}
+watch(
+    () => props.savedRecipients,
+    (v) => {
+        savedRecipients.value = Array.isArray(v) ? [...v] : [];
+    },
+    { deep: true },
+);
 
 function pickSavedRecipient(): void {
-    const rec = savedRecipients.value.find((r) => r.id === selectedSavedRecipientId.value) ?? null;
-    if (!rec) return;
-    bankCode.value = rec.bank_code;
+    const sid = Number(selectedSavedRecipientId.value);
+    const rec = Number.isFinite(sid) && sid > 0 ? (savedRecipients.value.find((r) => r.id === sid) ?? null) : null;
+    if (!rec) {
+        return;
+    }
+    const bid = typeof rec.bank_id === 'number' && rec.bank_id > 0 ? rec.bank_id : 0;
+    const bank = bid > 0 ? bankList.value.find((b) => b.id === bid) ?? null : null;
+    if (!bank) {
+        toast.error('Ngân hàng đã lưu không còn trong danh sách — chọn lại NH ở bước 1.');
+        return;
+    }
+    bankId.value = String(bank.id);
     accountNumberInput.value = rec.account_number;
     recipientName.value = rec.recipient_name;
     step.value = 2;
 }
 
-async function loadBanks(): Promise<void> {
-    if (loadingBanks.value) return;
-    loadingBanks.value = true;
-    try {
-        const { data } = await axios.get('/api/managed-devices/banklookup/banks');
-        const banks = (data?.data?.banks ?? []) as BankOption[];
-        bankOptions.value = Array.isArray(banks) ? banks : [];
-    } catch (e) {
-        toast.error('Không thể tải danh sách ngân hàng.');
-        bankOptions.value = [];
-    } finally {
-        loadingBanks.value = false;
-    }
-}
-
 async function verifyAndContinue(): Promise<void> {
-    if (!canContinueStep1.value) return;
+    if (!canContinueStep1.value) {
+        return;
+    }
     verifyingRecipient.value = true;
     recipientName.value = '';
     try {
         const { data } = await axios.post('/api/managed-devices/banklookup/account-name', {
-            bank: bankCode.value,
+            bank_id: Number(bankId.value),
             account: accountNumber.value,
         });
         const name = String(data?.data?.recipient_name ?? '').trim();
@@ -189,32 +192,31 @@ async function verifyAndContinue(): Promise<void> {
     }
 }
 
-function saveRecipient(): void {
+async function saveRecipient(): Promise<void> {
     if (!selectedBank.value || recipientName.value.trim() === '') {
         toast.error('Chưa có đủ dữ liệu để lưu.');
         return;
     }
-
-    const now = new Date().toISOString();
-    const id = `${bankCode.value}:${accountNumber.value}`;
-    const existingIdx = savedRecipients.value.findIndex((r) => r.id === id);
-    const next: SavedRecipient = {
-        id,
-        label: `${selectedBank.value.short_name || selectedBank.value.name} • ${accountNumber.value}`,
-        bank_code: bankCode.value,
-        bank_name: selectedBank.value.name,
-        account_number: accountNumber.value,
-        recipient_name: recipientName.value.trim(),
-        last_used_at: now,
-    };
-
-    if (existingIdx >= 0) {
-        savedRecipients.value.splice(existingIdx, 1);
+    if (savingRecipient.value) {
+        return;
     }
-
-    savedRecipients.value.unshift(next);
-    persistSavedRecipients();
-    toast.success('Đã lưu tài khoản nhận.');
+    savingRecipient.value = true;
+    try {
+        const { data } = await axios.post(managedDevices.savedTransferRecipients.store.url(props.device), {
+            bank_id: selectedBank.value.id,
+            account_number: accountNumber.value,
+            recipient_name: recipientName.value.trim(),
+        });
+        const list = data?.recipients;
+        if (Array.isArray(list)) {
+            savedRecipients.value = list as SavedRecipient[];
+        }
+        toast.success('Đã lưu tài khoản nhận.');
+    } catch {
+        toast.error('Không thể lưu tài khoản nhận.');
+    } finally {
+        savingRecipient.value = false;
+    }
 }
 
 function backToStep1(): void {
@@ -222,9 +224,13 @@ function backToStep1(): void {
 }
 
 function formatVndFromDigits(digits: string): string {
-    if (digits === '') return '';
+    if (digits === '') {
+        return '';
+    }
     const value = Number(digits);
-    if (!Number.isFinite(value)) return '';
+    if (!Number.isFinite(value)) {
+        return '';
+    }
     return value.toLocaleString('vi-VN');
 }
 
@@ -288,17 +294,21 @@ async function submitTransfer(): Promise<void> {
         toast.error('Thiếu thông tin người nhận.');
         return;
     }
-    if (submitting.value) return;
+    if (submitting.value) {
+        return;
+    }
     submitting.value = true;
     try {
         const operation_type = channel.value === 'pg' ? 'pg_transfer' : 'baca_transfer';
         const normalizedContent = normalizeTransferContent(contentInput.value, { trimFull: true });
+        const bankSearchLabel = appBankSearchName(selectedBank.value, channel.value);
         await axios.post(`/api/managed-devices/${props.device.id}/operations`, {
             operation_type,
             operation_payload: {
                 channel: channel.value,
-                bank_code: bankCode.value,
-                bank_name: selectedBank.value.short_name || selectedBank.value.name,
+                bank_id: selectedBank.value.id,
+                bank_code: selectedBank.value.code,
+                bank_name: bankSearchLabel,
                 account_number: accountNumber.value,
                 recipient_name: recipientName.value,
                 amount: Math.floor(amount),
@@ -325,15 +335,15 @@ watchDebounced(
     { debounce: 250 },
 );
 
-onMounted(() => {
-    void loadBanks();
-    loadSavedRecipients();
+watch(bankId, () => {
+    if (step.value === 1) {
+        recipientName.value = '';
+    }
 });
 </script>
 
 <template>
     <div class="p-4 space-y-4">
-
         <Head title="Chuyển tiền" />
 
         <Card class="max-w-3xl">
@@ -347,8 +357,14 @@ onMounted(() => {
             <CardContent class="space-y-6">
                 <div class="flex items-center gap-2 text-sm">
                     <div class="flex items-center gap-2">
-                        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
-                            :class="step === 1 ? 'border-primary text-primary' : 'border-muted-foreground/40 text-muted-foreground'">
+                        <span
+                            class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
+                            :class="
+                                step === 1
+                                    ? 'border-primary text-primary'
+                                    : 'border-muted-foreground/40 text-muted-foreground'
+                            "
+                        >
                             1
                         </span>
                         <span :class="step === 1 ? 'font-medium text-foreground' : 'text-muted-foreground'">
@@ -357,8 +373,14 @@ onMounted(() => {
                     </div>
                     <div class="h-px flex-1 bg-border/70" />
                     <div class="flex items-center gap-2">
-                        <span class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
-                            :class="step === 2 ? 'border-primary text-primary' : 'border-muted-foreground/40 text-muted-foreground'">
+                        <span
+                            class="inline-flex h-7 w-7 items-center justify-center rounded-full border"
+                            :class="
+                                step === 2
+                                    ? 'border-primary text-primary'
+                                    : 'border-muted-foreground/40 text-muted-foreground'
+                            "
+                        >
                             2
                         </span>
                         <span :class="step === 2 ? 'font-medium text-foreground' : 'text-muted-foreground'">
@@ -371,15 +393,16 @@ onMounted(() => {
                     <div v-if="savedRecipients.length" class="space-y-2">
                         <Label>Chọn tài khoản đã lưu</Label>
                         <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-                            <select v-model="selectedSavedRecipientId"
-                                class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
+                            <select
+                                v-model="selectedSavedRecipientId"
+                                class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                            >
                                 <option value="">-- Chọn nhanh --</option>
-                                <option v-for="r in savedRecipients" :key="r.id" :value="r.id">
+                                <option v-for="r in savedRecipients" :key="r.id" :value="String(r.id)">
                                     {{ r.label }} ({{ r.recipient_name }})
                                 </option>
                             </select>
-                            <Button type="button" variant="secondary" :disabled="selectedSavedRecipientId === ''"
-                                @click="pickSavedRecipient">
+                            <Button type="button" variant="secondary" :disabled="selectedSavedRecipientId === ''" @click="pickSavedRecipient">
                                 Dùng
                             </Button>
                         </div>
@@ -389,33 +412,28 @@ onMounted(() => {
                         <div class="space-y-2">
                             <Label>Ngân hàng</Label>
                             <div class="space-y-2">
-                                <Input v-model="bankSearch" placeholder="Tìm ngân hàng..." />
-                                <div class="relative">
-                                    <select v-model="bankCode"
-                                        class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
-                                        <option value="">-- Chọn ngân hàng --</option>
-                                        <option v-for="b in filteredBanks" :key="b.code" :value="b.code">
-                                            {{ b.short_name || b.name }} ({{ b.code }})
-                                        </option>
-                                    </select>
-                                    <div v-if="loadingBanks" class="absolute inset-y-0 right-3 flex items-center">
-                                        <Spinner />
-                                    </div>
-                                </div>
+                                <Input v-model="bankSearch" placeholder="Tìm theo tên hoặc mã..." />
+                                <select
+                                    v-model="bankId"
+                                    class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                                >
+                                    <option value="">-- Chọn ngân hàng --</option>
+                                    <option v-for="b in filteredBanks" :key="b.id" :value="String(b.id)">
+                                        {{ b.name }}
+                                    </option>
+                                </select>
                             </div>
                         </div>
                         <div class="space-y-2">
                             <Label>Số tài khoản</Label>
                             <Input v-model="accountNumberInput" inputmode="numeric" placeholder="VD: 0123456789" />
-                            <p class="text-xs text-muted-foreground">Nhập STK rồi bấm “Tiếp tục” để xác minh tên người
-                                nhận.</p>
+                            <p class="text-xs text-muted-foreground">Nhập STK rồi bấm “Tiếp tục” để xác minh tên người nhận (banklookup theo mã NH).</p>
                         </div>
                     </div>
 
                     <div class="flex items-center justify-between gap-2">
                         <Button :as="Link" variant="secondary" :href="deviceManagement.index()">Quay lại</Button>
-                        <Button type="button" :disabled="!canContinueStep1 || verifyingRecipient"
-                            @click="verifyAndContinue">
+                        <Button type="button" :disabled="!canContinueStep1 || verifyingRecipient" @click="verifyAndContinue">
                             <Spinner v-if="verifyingRecipient" />
                             Tiếp tục
                         </Button>
@@ -426,16 +444,19 @@ onMounted(() => {
                     <div class="rounded-md border border-border/70 bg-muted/30 p-3 text-sm">
                         <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
                             <span class="font-medium text-foreground">{{ recipientName }}</span>
-                            <span class="text-muted-foreground">• {{ selectedBank?.short_name || selectedBank?.name }} •
-                                {{ accountNumber }}</span>
+                            <span class="text-muted-foreground"
+                                >• {{ selectedBank?.name }} ({{ selectedBank?.code }}) • {{ accountNumber }}</span
+                            >
                         </div>
                     </div>
 
                     <div class="grid gap-4 sm:grid-cols-2">
                         <div class="space-y-2">
                             <Label>Kênh chuyển</Label>
-                            <select v-model="channel"
-                                class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm">
+                            <select
+                                v-model="channel"
+                                class="h-10 w-full rounded-md border border-border bg-background px-3 text-sm"
+                            >
                                 <option value="baca">Bắc Á</option>
                                 <option value="pg">PG Bank</option>
                             </select>
@@ -443,14 +464,18 @@ onMounted(() => {
                                 {{ internalTransferHint }}
                             </p>
                             <p v-else class="text-xs text-muted-foreground">
-                                Chọn đúng kênh (PG/Bắc Á) tương ứng với app bank trên cloud phone.
+                                Tên NH gửi xuống lệnh: PG dùng `pg_name`, Bắc Á dùng `baca_name` (từ DB) để app gõ đúng ô tìm kiếm.
                             </p>
                         </div>
                         <div class="space-y-2">
                             <Label>Số tiền</Label>
-                            <Input :model-value="formatVndFromDigits(amountDigits)" inputmode="numeric"
-                                placeholder="VD: 1.000.000" @update:model-value="onAmountModelUpdate"
-                                @paste="onAmountPaste" />
+                            <Input
+                                :model-value="formatVndFromDigits(amountDigits)"
+                                inputmode="numeric"
+                                placeholder="VD: 1.000.000"
+                                @update:model-value="onAmountModelUpdate"
+                                @paste="onAmountPaste"
+                            />
                         </div>
                         <div class="space-y-2">
                             <Label>Nội dung</Label>
@@ -458,13 +483,18 @@ onMounted(() => {
                               Nội dung chuyển khoản (payload `content` → lệnh pg_transfer / baca_transfer).
                               Giới hạn độ dài theo ngân hàng; khi gõ, script chỉ chuẩn hoá ký tự (không xoá khoảng trắng cuối đang gõ).
                             -->
-                            <textarea v-model="contentInput" :maxlength="CONTENT_MAX_LEN" rows="3"
+                            <textarea
+                                v-model="contentInput"
+                                :maxlength="CONTENT_MAX_LEN"
+                                rows="3"
                                 class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                                placeholder="VD: THANH TOAN HOA DON" autocomplete="off" spellcheck="false" />
+                                placeholder="VD: THANH TOAN HOA DON"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
                             <p class="text-xs text-muted-foreground">
-                                Khi gõ: IN HOA, bỏ dấu, chỉ A-Z / 0-9 / khoảng trắng (gộp nhiều space thành một). Khi
-                                gửi
-                                lệnh: trim đầu-cuối. Tối đa {{ CONTENT_MAX_LEN }} ký tự.
+                                Khi gõ: IN HOA, bỏ dấu, chỉ A-Z / 0-9 / khoảng trắng (gộp nhiều space thành một). Khi gửi lệnh: trim đầu-cuối. Tối đa
+                                {{ CONTENT_MAX_LEN }} ký tự.
                             </p>
                         </div>
                     </div>
@@ -472,7 +502,10 @@ onMounted(() => {
                     <div class="flex flex-wrap items-center justify-between gap-2">
                         <Button type="button" variant="secondary" @click="backToStep1">Quay lại bước 1</Button>
                         <div class="flex gap-2">
-                            <Button type="button" variant="outline" @click="saveRecipient">Lưu tài khoản</Button>
+                            <Button type="button" variant="outline" :disabled="savingRecipient" @click="saveRecipient">
+                                <Spinner v-if="savingRecipient" />
+                                Lưu tài khoản
+                            </Button>
                             <Button type="button" :disabled="submitting" @click="submitTransfer">
                                 <Spinner v-if="submitting" />
                                 Gửi lệnh chuyển

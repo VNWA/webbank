@@ -12,5 +12,6 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call(RoleAndUserSeeder::class);
+        // BankSeeder gọi API banklookup — chạy riêng khi có mạng: `php artisan db:seed --class=BankSeeder`
     }
 }

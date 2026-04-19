@@ -13,6 +13,15 @@ class StoreManagedDeviceRequest extends FormRequest
         return $this->user()->can('create', Device::class);
     }
 
+    protected function prepareForValidation(): void
+    {
+        if ($this->has('image_id')) {
+            $this->merge([
+                'image_id' => trim((string) $this->input('image_id')),
+            ]);
+        }
+    }
+
     /**
      * @return array<string, mixed>
      */
@@ -20,7 +29,7 @@ class StoreManagedDeviceRequest extends FormRequest
     {
         return [
             'duo_api_key' => ['required', 'string', 'max:255'],
-            'image_id' => ['required', 'string', 'max:255'],
+            'image_id' => ['required', 'string', 'max:255', Rule::unique('devices', 'image_id')],
             'pg_pass' => ['required', 'string', 'max:255'],
             'pg_pin' => ['required', 'string', 'max:255'],
             'baca_pass' => ['required', 'string', 'max:255'],
@@ -29,6 +38,16 @@ class StoreManagedDeviceRequest extends FormRequest
             'baca_video_id' => ['required', 'string', 'max:255'],
             'name' => ['nullable', 'string', 'max:255'],
             'status' => ['nullable', 'string', Rule::in(['normal', 'pending'])],
+        ];
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    public function messages(): array
+    {
+        return [
+            'image_id.unique' => 'Mã image_id (cloud phone) đã được gán cho thiết bị khác.',
         ];
     }
 }

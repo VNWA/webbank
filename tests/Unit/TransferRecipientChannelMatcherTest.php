@@ -11,12 +11,11 @@ class TransferRecipientChannelMatcherTest extends TestCase
     public static function pgInternalCases(): array
     {
         return [
-            'code pgbank' => ['PGBANK', '', true],
-            'code pg' => ['PG', '', true],
-            'name petrolimex' => ['', 'Ngân hàng TMCP Xăng dầu Petrolimex', true],
-            'name pg bank' => ['XXX', 'PG BANK', true],
-            'external vcb' => ['970436', 'Vietcombank', false],
+            'code pgb napas' => ['PGB', '', true],
+            'code pgb spaced' => [' pgb ', '', true],
+            'external vcb' => ['VCB', 'Vietcombank', false],
             'external empty' => ['', '', false],
+            'old pgbank string' => ['PGBANK', '', false],
         ];
     }
 
@@ -34,10 +33,9 @@ class TransferRecipientChannelMatcherTest extends TestCase
     {
         return [
             'code bab' => ['BAB', '', true],
-            'code bacabank' => ['BACABANK', '', true],
-            'name bac a' => ['', 'Ngân hàng TMCP Bắc Á', true],
-            'name nam a bank' => ['', 'NAM A BANK', true],
-            'external pg' => ['PGBANK', 'PG Bank', false],
+            'external pg code' => ['PGB', 'PG Bank', false],
+            'external vcb' => ['VCB', '', false],
+            'name only ignored' => ['', 'NAM A BANK', false],
         ];
     }
 
@@ -53,7 +51,7 @@ class TransferRecipientChannelMatcherTest extends TestCase
 
     public function test_non_transfer_types_return_false(): void
     {
-        $payload = ['bank_code' => 'PGBANK', 'bank_name' => 'PG'];
+        $payload = ['bank_code' => 'PGB', 'bank_name' => 'PG'];
         $this->assertFalse(TransferRecipientChannelMatcher::isInternalTransfer('pg_check_login', $payload));
     }
 }

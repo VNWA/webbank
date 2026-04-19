@@ -6,6 +6,7 @@ use App\Events\DeviceOperationUpdated;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreDeviceOperationRequest;
 use App\Jobs\ProcessDeviceOperation;
+use App\Models\Bank;
 use App\Models\Device;
 use App\Models\DeviceOperation;
 use App\Support\TransferRecipientChannelMatcher;
@@ -62,6 +63,16 @@ class DeviceOperationController extends Controller
             : [];
 
         if (in_array($validated['operation_type'], ['pg_transfer', 'baca_transfer'], true)) {
+            $bankId = (int) ($payload['bank_id'] ?? 0);
+            if ($bankId > 0) {
+                $bank = Bank::query()->find($bankId);
+                if ($bank !== null) {
+                    $payload['bank_id'] = $bank->id;
+                    $payload['bank_code'] = $bank->code;
+                    $payload['bank_name'] = $bank->appSearchLabelForOperation($validated['operation_type']);
+                }
+            }
+
             $payload['internal_transfer'] = TransferRecipientChannelMatcher::isInternalTransfer(
                 $validated['operation_type'],
                 $payload,

@@ -4,6 +4,7 @@ use App\Http\Controllers\Api\DashboardStatsController;
 use App\Http\Controllers\Api\DeviceOperationController;
 use App\Http\Controllers\Api\ManagedDeviceController;
 use App\Http\Controllers\Api\ManagedUserController;
+use App\Http\Controllers\Api\SavedTransferRecipientController;
 use App\Http\Controllers\Api\TransferHistoryController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DeviceManagementController;
@@ -99,6 +100,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->can('viewAny', Device::class);
         Route::post('managed-devices/{device}/operations', [DeviceOperationController::class, 'store'])
             ->name('api.managed-devices.operations.store')
+            ->can('update', 'device');
+        Route::post('managed-devices/{device}/saved-transfer-recipients', [SavedTransferRecipientController::class, 'store'])
+            ->name('api.managed-devices.saved-transfer-recipients.store')
             ->can('update', 'device');
         Route::delete('managed-devices/{device}', [ManagedDeviceController::class, 'destroy'])
             ->name('api.managed-devices.destroy')

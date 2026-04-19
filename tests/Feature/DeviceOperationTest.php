@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Enums\ApplicationRole;
 use App\Jobs\ProcessDeviceOperation;
+use App\Models\Bank;
 use App\Models\Device;
 use App\Models\DeviceOperation;
 use App\Models\DeviceOperationLog;
@@ -94,7 +95,7 @@ class DeviceOperationTest extends TestCase
                 'operation_type' => 'pg_transfer',
                 'operation_payload' => [
                     'channel' => 'pg',
-                    'bank_code' => 'PGBANK',
+                    'bank_code' => 'PGB',
                     'bank_name' => 'PG Bank',
                     'account_number' => '1234567890',
                     'recipient_name' => 'A',
@@ -152,6 +153,60 @@ class DeviceOperationTest extends TestCase
         $payload = $operation->operation_payload;
         $this->assertIsArray($payload);
         $this->assertFalse($payload['internal_transfer'] ?? true);
+    }
+
+    public function test_pg_transfer_trusts_bank_id_and_overrides_spoofed_bank_code_and_bank_name(): void
+    {
+        Queue::fake();
+        Http::fake([
+            '*' => Http::response([
+                'code' => 200,
+                'message' => 'Success',
+                'data' => [
+                    'list' => [['id' => 'img-pg-trust', 'status' => 1]],
+                ],
+            ]),
+        ]);
+
+        $bank = Bank::query()->create([
+            'code' => 'PGB',
+            'name' => 'PG Bank Full',
+            'short_name' => 'PG',
+            'pg_name' => 'AppSearchLabel | Alt',
+            'baca_name' => 'Baca Only',
+        ]);
+
+        $admin = User::factory()->create();
+        $admin->assignRole(ApplicationRole::Admin->value);
+        $device = Device::factory()->create([
+            'user_id' => $admin->id,
+            'image_id' => 'img-pg-trust',
+            'duo_api_key' => 'key-pg-trust',
+        ]);
+
+        $this->actingAs($admin)
+            ->postJson(route('api.managed-devices.operations.store', $device), [
+                'operation_type' => 'pg_transfer',
+                'operation_payload' => [
+                    'channel' => 'pg',
+                    'bank_id' => $bank->id,
+                    'bank_code' => '970436',
+                    'bank_name' => 'Spoofed Name',
+                    'account_number' => '1234567890',
+                    'recipient_name' => 'A',
+                    'amount' => 50_000,
+                    'content' => 'CK',
+                ],
+            ])
+            ->assertStatus(202);
+
+        $operation = DeviceOperation::query()->where('device_id', $device->id)->latest('id')->first();
+        $this->assertNotNull($operation);
+        $payload = $operation->operation_payload;
+        $this->assertIsArray($payload);
+        $this->assertSame('PGB', $payload['bank_code'] ?? null);
+        $this->assertSame('AppSearchLabel', $payload['bank_name'] ?? null);
+        $this->assertTrue($payload['internal_transfer'] ?? false);
     }
 
     public function test_cannot_queue_new_operation_when_device_has_running_operation(): void

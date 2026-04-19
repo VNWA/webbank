@@ -10,6 +10,7 @@ use App\Http\Requests\StoreManagedDeviceRequest;
 use App\Http\Requests\UpdateDeviceNoteRequest;
 use App\Http\Requests\UpdateManagedDeviceRequest;
 use App\Http\Resources\ManagedDeviceResource;
+use App\Models\Bank;
 use App\Models\Device;
 use App\Services\BankLookupApi;
 use App\Services\DuoPlusApi;
@@ -221,11 +222,23 @@ class ManagedDeviceController extends Controller
         $this->authorize('viewAny', Device::class);
 
         $data = $request->validate([
-            'bank' => ['required', 'string', 'max:50'],
+            'bank_id' => ['nullable', 'integer', 'exists:banks,id'],
+            'bank' => ['required_without:bank_id', 'string', 'max:50'],
             'account' => ['required', 'string', 'max:50'],
         ]);
 
-        $result = $bankLookupApi->lookupAccountName($data['bank'], $data['account']);
+        $bankCode = isset($data['bank_id'])
+            ? (string) Bank::query()->whereKey((int) $data['bank_id'])->value('code')
+            : (string) $data['bank'];
+
+        if ($bankCode === '') {
+            return response()->json([
+                'message' => 'Không xác định được mã ngân hàng (bank code).',
+                'data' => ['ok' => false, 'message' => 'Thiếu bank code.', 'recipient_name' => ''],
+            ], 422);
+        }
+
+        $result = $bankLookupApi->lookupAccountName($bankCode, $data['account']);
 
         return response()->json([
             'message' => $result['message'],

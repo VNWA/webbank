@@ -213,6 +213,67 @@ class ManagedDeviceManagementTest extends TestCase
         $this->assertDatabaseMissing('devices', ['id' => $deviceId]);
     }
 
+    public function test_admin_cannot_create_device_with_duplicate_image_id(): void
+    {
+        $this->fakeDuoPlusHttp(2);
+
+        $admin = User::factory()->create();
+        $admin->assignRole(ApplicationRole::Admin->value);
+
+        Device::factory()->create([
+            'user_id' => $admin->id,
+            'image_id' => 'dup-img',
+            'duo_api_key' => 'key-a',
+        ]);
+
+        $payload = [
+            'duo_api_key' => 'key-b',
+            'image_id' => 'dup-img',
+            'pg_pass' => 'pg-pass',
+            'pg_pin' => '1234',
+            'baca_pass' => 'bc-pass',
+            'baca_pin' => '5678',
+            'pg_video_id' => 'pg-video',
+            'baca_video_id' => 'bc-video',
+        ];
+
+        $this->actingAs($admin)
+            ->postJson(route('api.managed-devices.store'), $payload)
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors(['image_id']);
+
+        $this->assertSame(1, Device::query()->where('image_id', 'dup-img')->count());
+    }
+
+    public function test_admin_cannot_create_device_with_image_id_differing_only_by_leading_trailing_spaces(): void
+    {
+        $this->fakeDuoPlusHttp(2);
+
+        $admin = User::factory()->create();
+        $admin->assignRole(ApplicationRole::Admin->value);
+
+        Device::factory()->create([
+            'user_id' => $admin->id,
+            'image_id' => 'trim-img',
+            'duo_api_key' => 'key-a',
+        ]);
+
+        $payload = [
+            'duo_api_key' => 'key-b',
+            'image_id' => '  trim-img  ',
+            'pg_pass' => 'pg-pass',
+            'pg_pin' => '1234',
+            'baca_pass' => 'bc-pass',
+            'baca_pin' => '5678',
+            'pg_video_id' => 'pg-video',
+            'baca_video_id' => 'bc-video',
+        ];
+
+        $this->actingAs($admin)
+            ->postJson(route('api.managed-devices.store'), $payload)
+            ->assertUnprocessable();
+    }
+
     public function test_admin_can_bulk_delete_selected_devices(): void
     {
         $this->fakeDuoPlusHttp(2);

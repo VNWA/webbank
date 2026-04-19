@@ -66,6 +66,11 @@ class Device extends Model
         return $this->hasMany(TransferHistory::class)->latest('id');
     }
 
+    public function savedTransferRecipients(): HasMany
+    {
+        return $this->hasMany(SavedTransferRecipient::class);
+    }
+
     /**
      * Nhãn trạng thái nguồn từ DWIN (`on`, `off`, `unknown`, …).
      */
