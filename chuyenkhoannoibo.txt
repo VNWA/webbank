@@ -1,0 +1,15 @@
+
+
+- Ở PG:
+    Đầu tiên thì các bước login, nhấn nút bỏ qua, tap vào button chuyển tiền thì giống như ở pg chuyển tiền bình thường
+    Nhưng mà tiếp theo đó không giống, ở chuyển khoản nội bộ tap vào tọa độ chuyển tiền trong hệ thống ở tọa đọ 176 446
+    Sau đó click vào nút đóng modal ở tọa độ 564 1127, sau đó sẽ vào trang chuyển tiền trong hệ thống
+    Sau đó nội dung màn nội bộ: tap nút xóa 943 1334 → tap ô nhập 900 1334 → adb input text nội dung người dùng → blur 18 600 (config internal_transfer.tap)
+    Sau đó tap vào input số tiền  ở tọa độ  276 1106 và nhập vào số tiền người dùng đã gửi trước đó  , sau đó click vào tọa độ 18 600
+    Sau đó click vào input số tài khoản ở tọa độ  tọa độ  337 908 và  nhập số tài khoản nhận mà người dùng đã gửi vào  , sau đó click vào tọa độ 18 600
+    Sau đó chờ 1.5s , rồi click vào nút tiếp tục ở tọa độ 516 1782 , sau đó dùng dumpui kiểm tra, nếu mà có text "Giao dịch không thực hiện được trong lúc này.Quý khách vui lòng kiểm tra lại", thì tap vào nút đóng ở tọa độ   542 1151 , sau đó thử lại nhấn vào nút tiếp tục ở tọa độ đã cho kia, rồi lại dùng uidump để kiểm tra xem có text kia không, nếu có thì tap vào nút đóng rồi lại ấn tiếp tục , rồi lại kiểm tra , cứ như vậy tối đa 4 lần nếu mà vẫn còn text kia thì dừng ahfnh động chuyển tiền trả về lỗi thôi nhé
+    Và sau đó nếu trường hợp qua được k có cái text kia thì sẽ vào trang xác thực thông tin như ở pg chuyển tiền bình thường ngang đây là cứ làm nhưu pg chuyển tiền bình thường trên 10tr thì kích hoạt livestram rồi có thêm gì đó các kiểu
+- Ở Bắc á:
+    Đầu tiên thì các bước login, rồi nhấn vào button chuyển tiền, rồi nhấn vào button tới tài khoản khác thì như bắc á chuyển tiền bình thường
+    Nhưng mà khi vào cái trang mà để nhập só tài khoản và ngân hàng ấy, thì nó khác, ở đây cần click vào tab Cùng ngân hàng ở tọa độ 837 311
+    Rồi sau đó tap vào input số tài khoản ở tọa độ 323 646 rồi nhập vào số tài khoản ngời dùng đã gửi vào trước đó  rồi tap vào button kiểm tra ở  tọa đọ 942 1125 rồi sau đó chờ 2s rồi nhấn vào nút tiếp tục ở tọa độ 521 968 , ở đây là đã tới bước nhập số tiền và nội  dung như ở bắc á bình thường và các bước sau như bắc á bình thường vậy

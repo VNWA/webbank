@@ -9,6 +9,32 @@ return [
         'use_check_beneficiary' => false,
     ],
 
+    'own_bank_match' => [
+        'codes' => ['BACABANK', 'BAB', 'BACA', 'NAB'],
+        'name_keywords' => [
+            'BACABANK',
+            'BAC A',
+            'BACABANK',
+            'NAM A BANK',
+            'NAMABANK',
+        ],
+    ],
+
+    /** Chuyển cùng ngân hàng Bắc Á — tab + STK + kiểm tra + tiếp tục. */
+    'internal_transfer' => [
+        'tap' => [
+            'same_bank_tab' => [837, 311],
+            'account' => [323, 646],
+            'check_beneficiary' => [942, 1125],
+            'continue' => [521, 968],
+        ],
+        'timing' => [
+            'wait_after_same_bank_tab' => 0.8,
+            'wait_after_check' => 2.0,
+            'wait_after_continue' => 1.0,
+        ],
+    ],
+
     'timing' => [
         'wait_open' => 3.0,
         'wait_after_login' => 3.0,

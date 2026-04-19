@@ -106,11 +106,12 @@ function isSameBankAsChannel(bank: BankOption | null, ch: 'pg' | 'baca'): boolea
     });
 }
 
-const sameBankWarning = computed<string | null>(() => {
+/** Gợi ý: server sẽ gán luồng nội bộ trên app khi NH nhận khớp kênh (không chặn gửi lệnh). */
+const internalTransferHint = computed<string | null>(() => {
     if (!selectedBank.value) return null;
     if (isSameBankAsChannel(selectedBank.value, channel.value)) {
         const label = channel.value === 'pg' ? 'PG Bank' : 'Bắc Á Bank';
-        return `Không thể chuyển cùng ngân hàng (${label} → ${label}). Vui lòng đổi kênh chuyển.`;
+        return `Ngân hàng nhận trùng kênh ${label}: lệnh sẽ chạy luồng chuyển nội bộ trên app (không chọn NH liên ngân hàng).`;
     }
     return null;
 });
@@ -240,16 +241,28 @@ function onAmountPaste(e: ClipboardEvent): void {
     amountDigits.value = text.replace(/\D/g, '');
 }
 
-function normalizeTransferContent(raw: string): string {
-    // Uppercase + remove accents
+/**
+ * Chuẩn hoá nội dung chuyển khoản (gửi lên `operation_payload.content` / app bank).
+ * - `trimFull: false` (khi đang gõ): không `.trim()` đầu-cuối để gõ dấu cách cuối câu vẫn giữ được; chỉ gộp nhiều khoảng trắng thành một.
+ * - `trimFull: true` (lúc submit): trim toàn chuỗi trước khi gửi API.
+ */
+function normalizeTransferContent(raw: string, options?: { trimFull?: boolean }): string {
+    const trimFull = options?.trimFull ?? false;
     let s = raw.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     s = s.replace(/đ/gi, 'D');
     s = s.toUpperCase();
-    // Keep A-Z 0-9 space only (banks often reject special chars)
     s = s.replace(/[^A-Z0-9 ]+/g, ' ');
-    s = s.replace(/\s+/g, ' ').trim();
+    s = s.replace(/\s+/g, ' ');
+    if (trimFull) {
+        s = s.trim();
+    } else {
+        s = s.replace(/^\s+/, '');
+    }
     if (s.length > CONTENT_MAX_LEN) {
-        s = s.slice(0, CONTENT_MAX_LEN).trimEnd();
+        s = s.slice(0, CONTENT_MAX_LEN);
+        if (trimFull) {
+            s = s.trimEnd();
+        }
     }
     return s;
 }
@@ -257,17 +270,15 @@ function normalizeTransferContent(raw: string): string {
 watchDebounced(
     contentInput,
     (v) => {
-        const next = normalizeTransferContent(v);
-        if (next !== v) contentInput.value = next;
+        const next = normalizeTransferContent(v, { trimFull: false });
+        if (next !== v) {
+            contentInput.value = next;
+        }
     },
     { debounce: 120 },
 );
 
 async function submitTransfer(): Promise<void> {
-    if (sameBankWarning.value) {
-        toast.error(sameBankWarning.value);
-        return;
-    }
     const amount = Number(amountDigits.value);
     if (!Number.isFinite(amount) || amount <= 0) {
         toast.error('Số tiền không hợp lệ.');
@@ -281,7 +292,7 @@ async function submitTransfer(): Promise<void> {
     submitting.value = true;
     try {
         const operation_type = channel.value === 'pg' ? 'pg_transfer' : 'baca_transfer';
-        const normalizedContent = normalizeTransferContent(contentInput.value);
+        const normalizedContent = normalizeTransferContent(contentInput.value, { trimFull: true });
         await axios.post(`/api/managed-devices/${props.device.id}/operations`, {
             operation_type,
             operation_payload: {
@@ -428,8 +439,8 @@ onMounted(() => {
                                 <option value="baca">Bắc Á</option>
                                 <option value="pg">PG Bank</option>
                             </select>
-                            <p v-if="sameBankWarning" class="text-xs font-medium text-destructive">
-                                {{ sameBankWarning }}
+                            <p v-if="internalTransferHint" class="text-xs text-foreground/90">
+                                {{ internalTransferHint }}
                             </p>
                             <p v-else class="text-xs text-muted-foreground">
                                 Chọn đúng kênh (PG/Bắc Á) tương ứng với app bank trên cloud phone.
@@ -447,12 +458,22 @@ onMounted(() => {
                         </div>
                         <div class="space-y-2">
                             <Label>Nội dung</Label>
-                            <textarea v-model="contentInput" :maxlength="CONTENT_MAX_LEN" rows="3"
+                            <!--
+                              Nội dung chuyển khoản (payload `content` → lệnh pg_transfer / baca_transfer).
+                              Giới hạn độ dài theo ngân hàng; khi gõ, script chỉ chuẩn hoá ký tự (không xoá khoảng trắng cuối đang gõ).
+                            -->
+                            <textarea
+                                v-model="contentInput"
+                                :maxlength="CONTENT_MAX_LEN"
+                                rows="3"
                                 class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-primary"
-                                placeholder="VD: THANH TOAN" />
+                                placeholder="VD: THANH TOAN HOA DON"
+                                autocomplete="off"
+                                spellcheck="false"
+                            />
                             <p class="text-xs text-muted-foreground">
-                                Tự chuẩn hoá: IN HOA, bỏ dấu, chỉ A-Z/0-9/khoảng trắng. Tối đa {{ CONTENT_MAX_LEN }} ký
-                                tự.
+                                Khi gõ: IN HOA, bỏ dấu, chỉ A-Z / 0-9 / khoảng trắng (gộp nhiều space thành một). Khi gửi
+                                lệnh: trim đầu-cuối. Tối đa {{ CONTENT_MAX_LEN }} ký tự.
                             </p>
                         </div>
                     </div>
@@ -461,7 +482,7 @@ onMounted(() => {
                         <Button type="button" variant="secondary" @click="backToStep1">Quay lại bước 1</Button>
                         <div class="flex gap-2">
                             <Button type="button" variant="outline" @click="saveRecipient">Lưu tài khoản</Button>
-                            <Button type="button" :disabled="submitting || !!sameBankWarning" @click="submitTransfer">
+                            <Button type="button" :disabled="submitting" @click="submitTransfer">
                                 <Spinner v-if="submitting" />
                                 Gửi lệnh chuyển
                             </Button>

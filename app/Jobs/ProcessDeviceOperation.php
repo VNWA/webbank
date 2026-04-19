@@ -9,6 +9,7 @@ use App\Models\DeviceOperationLog;
 use App\Models\TransferHistory;
 use App\Services\DuoPlusApi;
 use App\Support\BalanceFromUiDumpParser;
+use App\Support\PgTransferSuccessfulUiDump;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Filesystem\FilesystemAdapter;
 use Illuminate\Foundation\Queue\Queueable;
@@ -369,43 +370,78 @@ class ProcessDeviceOperation implements ShouldQueue
         $this->tap($duoPlusApi, $device, $operation, 'tap_other_account', $tap['other_account']);
         $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_other_account', 1.5);
 
-        // STK
-        $this->tap($duoPlusApi, $device, $operation, 'focus_account', $tap['account']);
-        $this->sendAdb($duoPlusApi, $device, $operation, 'clear_account', 'input keyevent 277');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_account', $this->inputTextCommand($account));
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_account', 1.0);
+        $internalTransfer = ! empty($payload['internal_transfer']);
 
-        // Bank select
-        $this->tap($duoPlusApi, $device, $operation, 'tap_bank', $tap['bank']);
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank', (float) ($timing['wait_bank_open'] ?? 1.0));
-        $this->tap($duoPlusApi, $device, $operation, 'tap_bank_search', $tap['bank_search']);
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_search', (float) ($timing['wait_bank_search_focus'] ?? 0.3));
-        $this->sendAdb(
-            $duoPlusApi,
-            $device,
-            $operation,
-            'input_bank_name',
-            $this->inputTextCommand($bankNameForSearch !== '' ? $bankNameForSearch : $bankName),
-        );
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_typing', (float) ($timing['wait_bank_typing'] ?? 1.8));
-        $this->tap($duoPlusApi, $device, $operation, 'tap_bank_first_row', $tap['bank_first_row']);
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_selected', (float) ($timing['wait_bank_selected'] ?? 1.8));
+        if ($internalTransfer) {
+            $icfg = (array) ($cfg['internal_transfer'] ?? []);
+            $itap = (array) ($icfg['tap'] ?? []);
+            $itim = (array) ($icfg['timing'] ?? []);
 
-        // Sau khi chọn bank+stk xong (flow bạn chốt): tap after_bank rồi tiếp tục.
-        if (isset($tap['after_bank']) && is_array($tap['after_bank'])) {
-            $this->tap($duoPlusApi, $device, $operation, 'tap_after_bank', $tap['after_bank']);
-            $this->pauseLocal((float) ($timing['wait_after_bank_selected'] ?? 2.0));
+            $this->log($operation, 'baca_transfer_branch', 'Bắc Á: luồng chuyển cùng ngân hàng (tab + STK + kiểm tra).', 'info');
+
+            $sameTab = $itap['same_bank_tab'] ?? [837, 311];
+            if (is_array($sameTab)) {
+                $this->tap($duoPlusApi, $device, $operation, 'baca_int_same_bank_tab', $sameTab);
+            }
+            $this->pauseLocal((float) ($itim['wait_after_same_bank_tab'] ?? 0.8));
+
+            $accTap = isset($itap['account']) && is_array($itap['account']) ? $itap['account'] : $tap['account'];
+            $this->tap($duoPlusApi, $device, $operation, 'baca_int_focus_account', $accTap);
+            $this->sendAdb($duoPlusApi, $device, $operation, 'baca_int_clear_account', 'input keyevent 277');
+            $this->sendAdb($duoPlusApi, $device, $operation, 'baca_int_input_account', $this->inputTextCommand($account));
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'baca_int_wait_account', 1.0);
+
+            $checkTap = $itap['check_beneficiary'] ?? null;
+            if (is_array($checkTap)) {
+                $this->tap($duoPlusApi, $device, $operation, 'baca_int_check_beneficiary', $checkTap);
+                $this->pauseLocal((float) ($itim['wait_after_check'] ?? 2.0));
+            }
+
+            $contTap = $itap['continue'] ?? $tap['continue_step_1'];
+            if (! is_array($contTap)) {
+                return ['ok' => false, 'message' => 'Thiếu tọa độ `internal_transfer.tap.continue` cho Bắc Á nội bộ.'];
+            }
+            $this->tap($duoPlusApi, $device, $operation, 'baca_int_continue', $contTap);
+            $this->pauseLocal((float) ($itim['wait_after_continue'] ?? 1.0));
+        } else {
+            // STK
+            $this->tap($duoPlusApi, $device, $operation, 'focus_account', $tap['account']);
+            $this->sendAdb($duoPlusApi, $device, $operation, 'clear_account', 'input keyevent 277');
+            $this->sendAdb($duoPlusApi, $device, $operation, 'input_account', $this->inputTextCommand($account));
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_account', 1.0);
+
+            // Bank select
+            $this->tap($duoPlusApi, $device, $operation, 'tap_bank', $tap['bank']);
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank', (float) ($timing['wait_bank_open'] ?? 1.0));
+            $this->tap($duoPlusApi, $device, $operation, 'tap_bank_search', $tap['bank_search']);
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_search', (float) ($timing['wait_bank_search_focus'] ?? 0.3));
+            $this->sendAdb(
+                $duoPlusApi,
+                $device,
+                $operation,
+                'input_bank_name',
+                $this->inputTextCommand($bankNameForSearch !== '' ? $bankNameForSearch : $bankName),
+            );
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_typing', (float) ($timing['wait_bank_typing'] ?? 1.8));
+            $this->tap($duoPlusApi, $device, $operation, 'tap_bank_first_row', $tap['bank_first_row']);
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_selected', (float) ($timing['wait_bank_selected'] ?? 1.8));
+
+            // Sau khi chọn bank+stk xong (flow bạn chốt): tap after_bank rồi tiếp tục.
+            if (isset($tap['after_bank']) && is_array($tap['after_bank'])) {
+                $this->tap($duoPlusApi, $device, $operation, 'tap_after_bank', $tap['after_bank']);
+                $this->pauseLocal((float) ($timing['wait_after_bank_selected'] ?? 2.0));
+            }
+
+            // Optional: bấm Kiểm tra thụ hưởng nếu bật config.
+            if (($flow['use_check_beneficiary'] ?? false) && isset($tap['check_beneficiary']) && is_array($tap['check_beneficiary'])) {
+                $this->tap($duoPlusApi, $device, $operation, 'tap_check_beneficiary', $tap['check_beneficiary']);
+                $this->pauseLocal((float) ($timing['wait_after_check'] ?? 2.0));
+            }
+
+            // Continue step 1
+            $this->tap($duoPlusApi, $device, $operation, 'continue_step_1', $tap['continue_step_1']);
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_continue_step_1', (float) ($timing['wait_after_continue_1'] ?? 1.0));
         }
-
-        // Optional: bấm Kiểm tra thụ hưởng nếu bật config.
-        if (($flow['use_check_beneficiary'] ?? false) && isset($tap['check_beneficiary']) && is_array($tap['check_beneficiary'])) {
-            $this->tap($duoPlusApi, $device, $operation, 'tap_check_beneficiary', $tap['check_beneficiary']);
-            $this->pauseLocal((float) ($timing['wait_after_check'] ?? 2.0));
-        }
-
-        // Continue step 1
-        $this->tap($duoPlusApi, $device, $operation, 'continue_step_1', $tap['continue_step_1']);
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_continue_step_1', (float) ($timing['wait_after_continue_1'] ?? 1.0));
 
         // Amount + note
         $this->tap($duoPlusApi, $device, $operation, 'focus_amount', $tap['amount']);
@@ -485,11 +521,11 @@ class ProcessDeviceOperation implements ShouldQueue
         $this->pauseLocal((float) ($timing['wait_after_confirm'] ?? 3.0));
 
         $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
-        $ok = $this->containsAny($dump, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
+        $ok = $this->bacaTransferDumpLooksSuccessful($dump);
         if (! $ok) {
             $this->pauseLocal((float) ($timing['wait_after_success_retry'] ?? 3.0));
             $dump2 = $this->dumpUiText($duoPlusApi, $device, $operation);
-            $ok = $this->containsAny($dump2, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
+            $ok = $this->bacaTransferDumpLooksSuccessful($dump2);
         }
 
         $receiptPng = $ok
@@ -610,6 +646,8 @@ class ProcessDeviceOperation implements ShouldQueue
         $cfg = (array) config('pgbank');
         $tap = (array) ($cfg['tap'] ?? []);
         $timing = (array) ($cfg['timing'] ?? []);
+        $icfg = (array) ($cfg['internal_transfer'] ?? []);
+        $itim = (array) ($icfg['timing'] ?? []);
 
         $bankNameForSearch = $this->resolveBankNameForSearch($bankName, (array) ($cfg['bank_name_map'] ?? []), (array) ($cfg['bank_list'] ?? []));
 
@@ -621,65 +659,110 @@ class ProcessDeviceOperation implements ShouldQueue
         ]);
         $this->ensurePgLogin($device, $duoPlusApi, $operation, $package, $tap, $timing);
 
-        // Prefill — dùng pauseLocal thay sleepCloud để tránh API overhead (~1s/lần)
+        // Home: tap Chuyển tiền — nội bộ: bước tiếp theo là "Trong hệ thống" (chuyenkhoannoibo.txt), không qua TK khác.
         $this->tap($duoPlusApi, $device, $operation, 'tap_transfer', $tap['transfer']);
         $this->pauseLocal(0.8);
-        $this->tap($duoPlusApi, $device, $operation, 'tap_other_account', $tap['other_account']);
-        $this->pauseLocal(0.8);
-        $this->tap($duoPlusApi, $device, $operation, 'dismiss_popup', $tap['dismiss_popup']);
-        $this->pauseLocal(0.5);
 
-        // Note — tap clear_note → focus_note → keyevent 277 → input text
         $safeNote = $this->normalizeTransferNote($note !== '' ? $note : 'ck');
-        if (isset($tap['clear_note']) && is_array($tap['clear_note'])) {
-            $this->tap($duoPlusApi, $device, $operation, 'tap_clear_note', $tap['clear_note']);
-            $this->pauseLocal(0.2);
-        }
-        $this->tap($duoPlusApi, $device, $operation, 'focus_note', $tap['note']);
-        $this->pauseLocal(0.25);
-        $this->sendAdb($duoPlusApi, $device, $operation, 'select_note', 'input keyevent 277');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_note', $this->inputTextCommand($safeNote));
-        $this->pauseLocal(0.15);
-        $this->tap($duoPlusApi, $device, $operation, 'blur', $tap['blur']);
-        $this->pauseLocal(0.15);
+        $internalTransfer = ! empty($payload['internal_transfer']);
+        $this->log(
+            $operation,
+            'pg_transfer_branch',
+            $internalTransfer ? 'PG: luồng chuyển khoản nội bộ (trong hệ thống).' : 'PG: luồng chuyển liên ngân hàng.',
+            'info',
+        );
 
-        // Amount
-        $this->tap($duoPlusApi, $device, $operation, 'focus_amount', $tap['amount']);
-        $this->pauseLocal(0.2);
-        $this->sendAdb($duoPlusApi, $device, $operation, 'clear_amount', 'input keyevent 277');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_amount', $this->inputTextCommand((string) $amount));
-        $this->pauseLocal(0.15);
-        $this->tap($duoPlusApi, $device, $operation, 'blur2', $tap['blur']);
-        $this->pauseLocal(0.15);
-
-        // Account + bank
-        $this->tap($duoPlusApi, $device, $operation, 'focus_account', $tap['account']);
-        $this->pauseLocal(0.2);
-        $this->sendAdb($duoPlusApi, $device, $operation, 'clear_account', 'input keyevent 277');
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_account', $this->inputTextCommand($account));
-        $this->pauseLocal(0.25);
-
-        $this->tap($duoPlusApi, $device, $operation, 'tap_bank', $tap['bank']);
-        $this->pauseLocal(0.6);
-        $this->tap($duoPlusApi, $device, $operation, 'tap_bank_search', $tap['bank_search']);
-        $this->pauseLocal(0.35);
-        $bankQuery = $bankNameForSearch !== '' ? $bankNameForSearch : $bankName;
-        $this->sendAdb($duoPlusApi, $device, $operation, 'input_bank_name', $this->inputTextCommand($bankQuery));
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_typing', 1.2);
-        $this->tap($duoPlusApi, $device, $operation, 'tap_bank_first_row', $tap['bank_first_row']);
-        $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_after_select_bank', 1.5);
-
-        // UI check after bank selection — botBank: kiểm tra "chuyển sang hình thức chuyển thường"
-        $dumpAfterBank = $this->dumpUiText($duoPlusApi, $device, $operation);
-        $lowAfterBank = mb_strtolower($dumpAfterBank);
-        if (str_contains($lowAfterBank, 'chuyển sang hình thức chuyển thường')) {
-            $this->log($operation, 'normal_transfer', 'App PG yêu cầu chuyển thường, tap đồng ý.');
-            $normalConfirm = $tap['normal_confirm'] ?? [786, 1157];
-            if (is_array($normalConfirm)) {
-                $this->tap($duoPlusApi, $device, $operation, 'tap_normal_confirm', $normalConfirm);
-            }
+        if (! $internalTransfer) {
+            $this->tap($duoPlusApi, $device, $operation, 'tap_other_account', $tap['other_account']);
+            $this->pauseLocal(0.8);
+            $this->tap($duoPlusApi, $device, $operation, 'dismiss_popup', $tap['dismiss_popup']);
             $this->pauseLocal(0.5);
         }
+
+        if ($internalTransfer) {
+            $internalErr = $this->runPgInternalTransferScreens(
+                $device,
+                $duoPlusApi,
+                $operation,
+                $tap,
+                $account,
+                $amount,
+                $safeNote,
+            );
+            if ($internalErr !== null) {
+                return $internalErr;
+            }
+        } else {
+            // Nội dung liên NH: tap xóa (mặc định không bỏ qua) → tap ô → `input text` → tap blur.
+            $this->pauseLocal((float) ($timing['note_wait_before_note_block'] ?? 0.4));
+            $clearNoteTap = isset($tap['clear_note']) && is_array($tap['clear_note']) && count($tap['clear_note']) >= 2
+                ? [(float) $tap['clear_note'][0], (float) $tap['clear_note'][1]]
+                : [948.2, 1540.8];
+            $focusNoteTap = isset($tap['note']) && is_array($tap['note']) && count($tap['note']) >= 2
+                ? [(float) $tap['note'][0], (float) $tap['note'][1]]
+                : [940.0, 1540.0];
+            $noteBlurTap = isset($tap['note_blur']) && is_array($tap['note_blur']) && count($tap['note_blur']) >= 2
+                ? [(float) $tap['note_blur'][0], (float) $tap['note_blur'][1]]
+                : (isset($tap['blur']) && is_array($tap['blur']) && count($tap['blur']) >= 2
+                    ? [(float) $tap['blur'][0], (float) $tap['blur'][1]]
+                    : [20.0, 604.0]);
+            $this->log($operation, 'pg_ln_note_clear_xy', 'PG liên NH: chuẩn bị tap nút xóa nội dung CK.', 'info', [
+                'clear_xy_raw' => $clearNoteTap,
+                'clear_xy_int' => $this->normalizeTapPair($clearNoteTap),
+            ]);
+            $this->fillPgTransferNoteTwoTapFlow(
+                $duoPlusApi,
+                $device,
+                $operation,
+                $timing,
+                $clearNoteTap,
+                $focusNoteTap,
+                $noteBlurTap,
+                'pg_ln',
+                $safeNote,
+            );
+            $this->pauseLocal(0.15);
+
+            // Amount
+            $this->tap($duoPlusApi, $device, $operation, 'focus_amount', $tap['amount']);
+            $this->pauseLocal(0.2);
+            $this->sendAdb($duoPlusApi, $device, $operation, 'clear_amount', 'input keyevent 277');
+            $this->sendAdb($duoPlusApi, $device, $operation, 'input_amount', $this->inputTextCommand((string) $amount));
+            $this->pauseLocal(0.15);
+            $this->tap($duoPlusApi, $device, $operation, 'blur2', $tap['blur']);
+            $this->pauseLocal(0.15);
+
+            // Account + bank
+            $this->tap($duoPlusApi, $device, $operation, 'focus_account', $tap['account']);
+            $this->pauseLocal(0.2);
+            $this->sendAdb($duoPlusApi, $device, $operation, 'clear_account', 'input keyevent 277');
+            $this->sendAdb($duoPlusApi, $device, $operation, 'input_account', $this->inputTextCommand($account));
+            $this->pauseLocal(0.25);
+
+            $this->tap($duoPlusApi, $device, $operation, 'tap_bank', $tap['bank']);
+            $this->pauseLocal(0.6);
+            $this->tap($duoPlusApi, $device, $operation, 'tap_bank_search', $tap['bank_search']);
+            $this->pauseLocal(0.35);
+            $bankQuery = $bankNameForSearch !== '' ? $bankNameForSearch : $bankName;
+            $this->sendAdb($duoPlusApi, $device, $operation, 'input_bank_name', $this->inputTextCommand($bankQuery));
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_bank_typing', 1.2);
+            $this->tap($duoPlusApi, $device, $operation, 'tap_bank_first_row', $tap['bank_first_row']);
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_after_select_bank', 1.5);
+
+            // UI check after bank selection — botBank: kiểm tra "chuyển sang hình thức chuyển thường"
+            $dumpAfterBank = $this->dumpUiText($duoPlusApi, $device, $operation);
+            $lowAfterBank = mb_strtolower($dumpAfterBank);
+            if (str_contains($lowAfterBank, 'chuyển sang hình thức chuyển thường')) {
+                $this->log($operation, 'normal_transfer', 'App PG yêu cầu chuyển thường, tap đồng ý.');
+                $normalConfirm = $tap['normal_confirm'] ?? [786, 1157];
+                if (is_array($normalConfirm)) {
+                    $this->tap($duoPlusApi, $device, $operation, 'tap_normal_confirm', $normalConfirm);
+                }
+                $this->pauseLocal(0.5);
+            }
+        }
+
+        $bankQuery = $bankNameForSearch !== '' ? $bankNameForSearch : $bankName;
 
         // Phase 2 — botBank: tap amount → keyevent 277 → input amount → blur → continue
         $threshold = (int) ($cfg['face_scan_threshold'] ?? 10_000_000);
@@ -734,8 +817,8 @@ class ProcessDeviceOperation implements ShouldQueue
             $lowMid2 = mb_strtolower($dumpMid2);
         }
 
-        // botBank: bank retry — nếu app rớt về form chuyển tiền, re-pick bank
-        if (str_contains($dumpMid2, 'id/submit') && str_contains($lowMid2, 'ngân hàng')) {
+        // botBank: bank retry — nếu app rớt về form chuyển tiền, re-pick bank (chỉ luồng liên NH)
+        if (! $internalTransfer && str_contains($dumpMid2, 'id/submit') && str_contains($lowMid2, 'ngân hàng')) {
             $this->log($operation, 'bank_retry', 'App rớt về form, re-pick bank.');
             $this->tap($duoPlusApi, $device, $operation, 'retry_bank_select', $tap['bank']);
             $this->pauseLocal(0.6);
@@ -768,36 +851,53 @@ class ProcessDeviceOperation implements ShouldQueue
             $this->pauseLocal(2.0);
         }
 
-        // PIN entry — botBank: tap focus → (face_scan: DEL×4) → retap + keyevent per digit
+        // PIN/OTP (PG): một luồng cho CK liên NH và CK nội bộ — luôn lấy 6 số từ `pg_pin` trên Device (giống CK thường).
         $pin = preg_replace('/\D+/', '', (string) $device->pg_pin) ?? '';
         if (strlen($pin) !== 6) {
-            return ['ok' => false, 'message' => 'PIN PG không hợp lệ (cần 6 số).'];
+            return ['ok' => false, 'message' => 'PIN PG không hợp lệ (cần 6 số trong pg_pin).'];
         }
 
-        $this->tap($duoPlusApi, $device, $operation, 'otp_focus', $tap['otp_focus']);
-        $this->pauseLocal(0.25);
+        $otpFocus = is_array($tap['otp_focus'] ?? null) && count($tap['otp_focus']) >= 2
+            ? [(int) $tap['otp_focus'][0], (int) $tap['otp_focus'][1]]
+            : [189, 529];
 
-        if ($requireFaceScan) {
-            for ($del = 0; $del < 4; $del++) {
-                $this->sendAdb($duoPlusApi, $device, $operation, "otp_del_{$del}", 'input keyevent 67');
-                $this->pauseLocal(0.04);
-            }
-            $this->pauseLocal(0.1);
-        }
+        $this->submitPgTransferOtpDigits(
+            $device,
+            $duoPlusApi,
+            $operation,
+            $timing,
+            $requireFaceScan,
+            $otpFocus,
+        );
 
-        $keycodeBase = $requireFaceScan ? 144 : 7;
-        for ($i = 0; $i < 6; $i++) {
-            $d = (int) $pin[$i];
-            $this->tap($duoPlusApi, $device, $operation, "otp_refocus_{$i}", $tap['otp_focus']);
-            $this->pauseLocal(0.06);
-            $this->sendAdb($duoPlusApi, $device, $operation, "otp_digit_{$d}_{$i}", 'input keyevent '.($keycodeBase + $d));
-            $this->pauseLocal(0.1);
+        $waitAfterOtp = (float) ($timing['wait_after_otp'] ?? 2.5);
+        if ($internalTransfer) {
+            $waitAfterOtp += (float) ($itim['wait_after_otp_extra'] ?? 0.0);
         }
-        $this->pauseLocal((float) ($timing['wait_after_otp'] ?? 2.0));
+        $this->pauseLocal($waitAfterOtp);
 
         // Success / error detection
+        $dump2 = null;
+        $dump3 = null;
+        $dump4 = null;
         $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
         $lowDump = mb_strtolower($dump);
+
+        // Sau PIN, app PG đôi khi hiện popup "chuyển sang hình thức chuyển thường" (kể cả luồng nội bộ).
+        $normalTransferNeedle = 'chuyển sang hình thức chuyển thường';
+        for ($normalRound = 0; $normalRound < 2; $normalRound++) {
+            if (! str_contains($lowDump, $normalTransferNeedle)) {
+                break;
+            }
+            $this->log($operation, 'normal_transfer', 'App PG yêu cầu chuyển thường (sau PIN), tap Đồng ý.', 'info');
+            $normalConfirm = $tap['normal_confirm'] ?? [786, 1157];
+            if (is_array($normalConfirm)) {
+                $this->tap($duoPlusApi, $device, $operation, 'tap_normal_confirm_post_pin_'.$normalRound, $normalConfirm);
+            }
+            $this->pauseLocal(1.2);
+            $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
+            $lowDump = mb_strtolower($dump);
+        }
 
         // botBank: OTP lock detection
         if (str_contains($lowDump, 'khoá tính năng') && str_contains($lowDump, 'smart otp')) {
@@ -819,23 +919,34 @@ class ProcessDeviceOperation implements ShouldQueue
             return ['ok' => false, 'message' => 'PIN PG không chính xác. Kiểm tra lại pg_pin trong database.'];
         }
 
-        $ok = $this->containsAny($dump, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
+        $ok = $this->pgTransferDumpLooksSuccessful($dump);
         if (! $ok) {
             $this->pauseLocal(3.0);
             $dump2 = $this->dumpUiText($duoPlusApi, $device, $operation);
-            $ok = $this->containsAny($dump2, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
+            $ok = $this->pgTransferDumpLooksSuccessful($dump2);
         }
         if (! $ok) {
             $this->pauseLocal(2.0);
             $dump3 = $this->dumpUiText($duoPlusApi, $device, $operation);
-            $ok = $this->containsAny($dump3, ['thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công']);
+            $ok = $this->pgTransferDumpLooksSuccessful($dump3);
         }
+        if (! $ok) {
+            $this->sleepCloud($duoPlusApi, $device, $operation, 'wait_success_after_otp', 5.0);
+            $dump4 = $this->dumpUiText($duoPlusApi, $device, $operation);
+            $ok = $this->pgTransferDumpLooksSuccessful($dump4);
+        }
+        $lastDumpForLog = $dump4 ?? $dump3 ?? $dump2 ?? $dump ?? '';
 
         $receiptPng = $ok
             ? $this->captureReceiptScreenshotPng($operation, $duoPlusApi, $device)
             : null;
 
         if (! $ok) {
+            $tail = mb_substr($lastDumpForLog, -1400);
+            $this->log($operation, 'pg_transfer_no_success_marker', 'Sau OTP không thấy chữ thành công trong dump.', 'warning', [
+                'dump_tail' => str($tail)->limit(900)->value(),
+            ]);
+
             return ['ok' => false, 'message' => 'PG chuyển tiền thất bại (không thấy marker thành công).'];
         }
 
@@ -1196,11 +1307,19 @@ class ProcessDeviceOperation implements ShouldQueue
     }
 
     /**
-     * @param  array<int, int>  $xy
+     * Gửi `input tap X Y` với X,Y nguyên — DuoPlus/ADB thường không nhận tọa độ thập phân (tap nút xóa có thể không chạy).
+     *
+     * @param  array{0?: mixed, 1?: mixed}  $xy
      */
     private function tap(DuoPlusApi $duoPlusApi, Device $device, DeviceOperation $operation, string $stage, array $xy): void
     {
-        $this->sendAdb($duoPlusApi, $device, $operation, $stage, 'input tap '.$xy[0].' '.$xy[1]);
+        $pair = $this->normalizeTapPair($xy);
+        if ($pair === null) {
+            $this->log($operation, $stage, 'Tọa độ tap không hợp lệ (cần [x,y]).', 'error', ['xy' => $xy]);
+            throw new \RuntimeException('Tọa độ tap không hợp lệ: '.$stage);
+        }
+
+        $this->sendAdb($duoPlusApi, $device, $operation, $stage, 'input tap '.$pair[0].' '.$pair[1]);
     }
 
     private function sleepCloud(DuoPlusApi $duoPlusApi, Device $device, DeviceOperation $operation, string $stage, float $seconds): void
@@ -1530,6 +1649,242 @@ class ProcessDeviceOperation implements ShouldQueue
         }
 
         return false;
+    }
+
+    private function pgTransferDumpLooksSuccessful(string $dump): bool
+    {
+        return PgTransferSuccessfulUiDump::matches($dump);
+    }
+
+    /**
+     * Nhập PIN / Smart OTP PG: đọc `pg_pin` (6 số), xóa sạch ô rồi gõ đúng một lần — không tự thử lại PIN (tránh khóa Smart OTP).
+     *
+     * Lưu ý: tap **hai lần** liên tiếp cùng `otp_focus` dễ trúng phím trên bàn phím số PG → sinh thêm một chữ số trước chuỗi adb; mặc định chỉ **một** tap + `wait_after_otp_focus`.
+     *
+     * @param  array{0: int, 1: int}  $otpFocus
+     */
+    private function submitPgTransferOtpDigits(
+        Device $device,
+        DuoPlusApi $duoPlusApi,
+        DeviceOperation $operation,
+        array $timing,
+        bool $requireFaceScan,
+        array $otpFocus,
+    ): void {
+        $pinSix = preg_replace('/\D+/', '', (string) $device->pg_pin) ?? '';
+        if (strlen($pinSix) !== 6) {
+            throw new \RuntimeException('PIN PG không hợp lệ (cần 6 số trong pg_pin).');
+        }
+
+        $this->log($operation, 'pg_otp_strategy', 'Smart OTP: 1 tap focus (mặc định), xóa ô rồi gõ đúng 6 số pg_pin — tránh tap đè phím số.', 'info');
+
+        $this->tap($duoPlusApi, $device, $operation, 'otp_focus', $otpFocus);
+        $this->pauseLocal((float) ($timing['wait_after_otp_focus'] ?? 0.38));
+        if (! empty($timing['otp_double_tap_focus'])) {
+            $this->tap($duoPlusApi, $device, $operation, 'otp_focus_2', $otpFocus);
+            $this->pauseLocal(0.18);
+        }
+
+        $selectAllCycles = max(0, min(4, (int) ($timing['otp_clear_select_all_cycles'] ?? 2)));
+        for ($c = 0; $c < $selectAllCycles; $c++) {
+            $this->sendAdb($duoPlusApi, $device, $operation, "otp_clear_sel_{$c}", 'input keyevent 277');
+            $this->pauseLocal(0.08);
+            $this->sendAdb($duoPlusApi, $device, $operation, "otp_clear_del_{$c}", 'input keyevent 67');
+            $this->pauseLocal(0.08);
+        }
+
+        $burst = max(0, min(24, (int) ($timing['otp_field_clear_del_burst'] ?? 12)));
+        if ($burst > 0) {
+            $per = 12;
+            $chunk = 0;
+            for ($left = $burst; $left > 0; $left -= $n) {
+                $n = min($per, $left);
+                $cmd = implode(' && ', array_fill(0, $n, 'input keyevent 67'));
+                $this->sendAdb($duoPlusApi, $device, $operation, 'otp_field_del_burst_'.$chunk, $cmd);
+                $this->pauseLocal(0.07);
+                $chunk++;
+            }
+        }
+
+        if ($requireFaceScan) {
+            for ($del = 0; $del < 4; $del++) {
+                $this->sendAdb($duoPlusApi, $device, $operation, "otp_livestream_tail_del_{$del}", 'input keyevent 67');
+                $this->pauseLocal(0.04);
+            }
+            $this->pauseLocal(0.08);
+        }
+
+        $this->pauseLocal(0.12);
+
+        $useNumpad = ! empty($timing['otp_use_numpad_keycodes']);
+        $keycodeBase = ($requireFaceScan || $useNumpad) ? 144 : 7;
+        $refocusEach = ! empty($timing['otp_refocus_each_digit']);
+
+        for ($i = 0; $i < 6; $i++) {
+            $d = (int) $pinSix[$i];
+            if ($refocusEach) {
+                $this->tap($duoPlusApi, $device, $operation, "otp_refocus_{$i}", $otpFocus);
+                $this->pauseLocal(0.06);
+            }
+            $this->sendAdb($duoPlusApi, $device, $operation, "otp_digit_{$d}_{$i}", 'input keyevent '.($keycodeBase + $d));
+            $this->pauseLocal((float) ($timing['wait_otp_digit_pg'] ?? 0.12));
+        }
+
+        if (! empty($timing['otp_send_enter_after_digits'])) {
+            $this->sendAdb($duoPlusApi, $device, $operation, 'otp_keyevent_enter', 'input keyevent 66');
+            $this->pauseLocal(0.25);
+        }
+    }
+
+    /**
+     * PG — nhập nội dung CK: tap vùng xóa (nếu có tọa độ) → tap ô nhập → `adb input text` → tap blur.
+     *
+     * @param  array{0: float|int, 1: float|int}|null  $clearTap
+     * @param  array{0: float|int, 1: float|int}  $focusTap
+     * @param  array{0: float|int, 1: float|int}  $blurTap
+     */
+    private function fillPgTransferNoteTwoTapFlow(
+        DuoPlusApi $duoPlusApi,
+        Device $device,
+        DeviceOperation $operation,
+        array $timing,
+        ?array $clearTap,
+        array $focusTap,
+        array $blurTap,
+        string $stagePrefix,
+        string $safeNote,
+    ): void {
+        if ($clearTap !== null) {
+            $repeats = max(1, min(5, (int) ($timing['note_clear_tap_repeat'] ?? 2)));
+            $between = (float) ($timing['note_wait_between_clear_taps'] ?? 0.22);
+            $this->log($operation, "{$stagePrefix}_note_clear_start", 'PG: bắt đầu tap nút xóa nội dung CK.', 'info', [
+                'repeats' => $repeats,
+                'xy_int' => $this->normalizeTapPair($clearTap),
+            ]);
+            for ($r = 0; $r < $repeats; $r++) {
+                $this->tap($duoPlusApi, $device, $operation, "{$stagePrefix}_note_clear_old_{$r}", $clearTap);
+                if ($r < $repeats - 1) {
+                    $this->pauseLocal($between);
+                }
+            }
+            $this->pauseLocal((float) ($timing['note_wait_after_clear_tap'] ?? $timing['wait_after_note_clear_first_tap'] ?? 0.35));
+        }
+        $this->tap($duoPlusApi, $device, $operation, "{$stagePrefix}_note_focus_input", $focusTap);
+        $this->pauseLocal((float) ($timing['note_wait_after_focus_tap'] ?? $timing['wait_after_note_focus_tap'] ?? 0.28));
+        $inputStage = $stagePrefix === 'pg_ln' ? 'input_note' : "{$stagePrefix}_input_note";
+        $this->sendAdb($duoPlusApi, $device, $operation, $inputStage, $this->inputTextCommand($safeNote));
+        $this->pauseLocal((float) ($timing['note_after_input_pause'] ?? 0.15));
+        $this->tap($duoPlusApi, $device, $operation, "{$stagePrefix}_note_blur", $blurTap);
+    }
+
+    private function bacaTransferDumpLooksSuccessful(string $dump): bool
+    {
+        return $this->containsAny($dump, [
+            'thành công', 'thanh cong', 'giao dịch thành công', 'chuyển tiền thành công',
+            'chuyen tien thanh cong', 'gd thành công', 'gd thanh cong', 'hoàn tất', 'hoan tat',
+        ]);
+    }
+
+    /**
+     * PG chuyển khoản nội bộ (trong hệ thống): tap luồng riêng + tối đa N lần "Tiếp tục" nếu gặp lỗi tạm thời.
+     *
+     * @return array{ok: bool, message: string}|null null = qua bước này, tiếp tục phase xác thực như PG thường
+     */
+    private function runPgInternalTransferScreens(
+        Device $device,
+        DuoPlusApi $duoPlusApi,
+        DeviceOperation $operation,
+        array $tap,
+        string $account,
+        int $amount,
+        string $safeNote,
+    ): ?array {
+        $cfg = (array) config('pgbank');
+        $icfg = (array) ($cfg['internal_transfer'] ?? []);
+        $itap = (array) ($icfg['tap'] ?? []);
+        $itim = (array) ($icfg['timing'] ?? []);
+        $noteTiming = array_merge((array) ($cfg['timing'] ?? []), $itim);
+        $needle = mb_strtolower((string) ($icfg['temporary_error_needle'] ?? 'giao dịch không thực hiện được trong lúc này'));
+        $maxAttempts = max(1, (int) ($icfg['continue_max_attempts'] ?? 4));
+
+        $xy = static function (array $arr, string $key, array $fallback): array {
+            $v = $arr[$key] ?? null;
+
+            return is_array($v) && count($v) >= 2 ? [(float) $v[0], (float) $v[1]] : $fallback;
+        };
+
+        $this->tap($duoPlusApi, $device, $operation, 'pg_int_in_system', $xy($itap, 'in_system', [176, 446]));
+        $this->pauseLocal((float) ($itim['wait_after_in_system'] ?? 1.0));
+        $this->tap($duoPlusApi, $device, $operation, 'pg_int_close_modal', $xy($itap, 'close_modal', [564, 1127]));
+        $this->pauseLocal((float) ($itim['wait_after_close_modal'] ?? 1.0));
+
+        // Nội dung nội bộ: tap xóa → tap ô → `input text` → tap blur (tọa độ `internal_transfer.tap.*`).
+        $clearNoteTap = $xy($itap, 'clear_note', [948.2, 1345]);
+        $noteTap = $xy($itap, 'note', [900, 1345]);
+        $noteBlurTap = $xy($itap, 'blur_corner', [20, 604]);
+        $clearTapForFlow = (($icfg['clear_note_tap_enabled'] ?? true) !== false) ? $clearNoteTap : null;
+        if ($clearTapForFlow === null) {
+            $this->log($operation, 'pg_int_note_clear_skipped', 'PG nội bộ: bỏ tap nút xóa (clear_note_tap_enabled=false).', 'warning');
+        } else {
+            $this->log($operation, 'pg_int_note_clear_xy', 'PG nội bộ: chuẩn bị tap nút xóa nội dung CK.', 'info', [
+                'clear_xy_raw' => $clearNoteTap,
+                'clear_xy_int' => $this->normalizeTapPair($clearNoteTap),
+            ]);
+        }
+        $this->log($operation, 'pg_int_note_step', 'Nội dung nội bộ: tap xóa → tap ô → input text → blur.', 'info', [
+            'clear_xy' => $clearNoteTap,
+            'note_xy' => $noteTap,
+            'blur_xy' => $noteBlurTap,
+            'clear_tap_enabled' => $clearTapForFlow !== null,
+        ]);
+        $this->fillPgTransferNoteTwoTapFlow(
+            $duoPlusApi,
+            $device,
+            $operation,
+            $noteTiming,
+            $clearTapForFlow,
+            $noteTap,
+            $noteBlurTap,
+            'pg_int',
+            $safeNote,
+        );
+        $this->pauseLocal((float) ($itim['wait_after_field_blur'] ?? 0.35));
+
+        $this->tap($duoPlusApi, $device, $operation, 'pg_int_focus_amount', $xy($itap, 'amount', [276, 1106]));
+        $this->pauseLocal(0.2);
+        $this->sendAdb($duoPlusApi, $device, $operation, 'pg_int_clear_amount', 'input keyevent 277');
+        $this->sendAdb($duoPlusApi, $device, $operation, 'pg_int_input_amount', $this->inputTextCommand((string) $amount));
+        $this->pauseLocal((float) ($itim['wait_after_field_blur'] ?? 0.35));
+        $this->tap($duoPlusApi, $device, $operation, 'pg_int_blur_after_amount', $xy($itap, 'blur_corner', [18, 600]));
+        $this->pauseLocal((float) ($itim['wait_after_field_blur'] ?? 0.35));
+
+        $this->tap($duoPlusApi, $device, $operation, 'pg_int_focus_account', $xy($itap, 'account', [337, 908]));
+        $this->pauseLocal(0.2);
+        $this->sendAdb($duoPlusApi, $device, $operation, 'pg_int_clear_account', 'input keyevent 277');
+        $this->sendAdb($duoPlusApi, $device, $operation, 'pg_int_input_account', $this->inputTextCommand($account));
+        $this->pauseLocal((float) ($itim['wait_after_field_blur'] ?? 0.35));
+        $this->tap($duoPlusApi, $device, $operation, 'pg_int_blur_after_account', $xy($itap, 'blur_corner', [18, 600]));
+        $this->pauseLocal((float) ($itim['wait_before_continue'] ?? 1.5));
+
+        $continueTap = $xy($itap, 'continue', [516, 1782]);
+        $dismissTap = $xy($itap, 'error_dismiss', [542, 1151]);
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $this->tap($duoPlusApi, $device, $operation, 'pg_int_continue_'.$attempt, $continueTap);
+            $this->pauseLocal((float) ($itim['wait_after_continue_dump'] ?? 1.2));
+            $dump = $this->dumpUiText($duoPlusApi, $device, $operation);
+            $low = mb_strtolower($dump);
+            if (! str_contains($low, $needle)) {
+                return null;
+            }
+            if ($attempt >= $maxAttempts) {
+                return ['ok' => false, 'message' => 'PG nội bộ: vẫn hiện lỗi tạm thời sau '.$maxAttempts.' lần thử Tiếp tục.'];
+            }
+            $this->tap($duoPlusApi, $device, $operation, 'pg_int_error_dismiss_'.$attempt, $dismissTap);
+            $this->pauseLocal(0.45);
+        }
+
+        return ['ok' => false, 'message' => 'PG nội bộ: không qua được bước Tiếp tục.'];
     }
 
     /**
